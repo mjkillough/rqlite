@@ -163,7 +163,7 @@ impl<C: Cell> Page<C> {
     }
 
     // "The two-byte integer at offset 3 gives the number of cells on the page."
-    fn num_cells(&self) -> usize {
+    pub fn len(&self) -> usize {
         BigEndian::read_u16(&self.header()[3..5]) as usize
     }
 
@@ -190,64 +190,45 @@ impl<C: Cell> Page<C> {
         BigEndian::read_u32(&self.header()[8..12])
     }
 
-    fn cell_contents(&self) -> &[u8] {
-        &self.data[self.cell_content_offset()..]
-    }
-
-    fn cells(&self) -> Cells<C> {
-        Cells { page: self }
-    }
-}
-
-
-struct Cells<'a, C: 'a + Cell> {
-    page: &'a Page<C>,
-}
-
-impl<'a, C: Cell> Cells<'a, C> {
-    pub fn len(&self) -> usize {
-        self.page.num_cells()
-    }
-
-    pub fn iter(&self) -> CellsIter<C> {
-        CellsIter {
-            cells: self,
-            idx: 0,
-        }
-    }
-
     fn cell_pointers(&self) -> &[u8] {
-        let offset = self.page.header_offset + self.page.header_length();
-        let len = self.page.num_cells() * 2;
-        &self.page.data[offset..offset + len]
+        let offset = self.header_offset + self.header_length();
+        let len = self.len() * 2;
+        &self.data[offset..offset + len]
     }
 
-    fn index(&self, index: usize) -> Result<C> {
-        if index > self.page.num_cells() {
+    pub fn cell(&self, index: usize) -> Result<C> {
+        if index > self.len() {
             panic!("Attempted to access out-of-bounds cell: {}", index);
         }
 
         let cell_pointer = &self.cell_pointers()[index * 2..];
         let cell_offset = BigEndian::read_u16(cell_pointer) as usize;
-        let bytes = self.page.data.slice_from(cell_offset);
+        let bytes = self.data.slice_from(cell_offset);
         C::from_bytes(bytes)
+    }
+
+    pub fn iter(&self) -> PageIter<C> {
+        PageIter {
+            page: self,
+            idx: 0,
+        }
     }
 }
 
 
-struct CellsIter<'a, C: 'a + Cell> {
-    cells: &'a Cells<'a, C>,
+struct PageIter<'a, C: 'a + Cell> {
+    page: &'a Page<C>,
     idx: usize,
 }
 
-impl<'a, C: Cell> Iterator for CellsIter<'a, C> {
+impl<'a, C: Cell> Iterator for PageIter<'a, C> {
     type Item = C;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.idx == self.cells.len() {
+        if self.idx == self.page.len() {
             None
         } else {
-            let v = self.cells.index(self.idx).unwrap();
+            let v = self.page.cell(self.idx).unwrap();
             self.idx += 1;
             Some(v)
         }
@@ -384,15 +365,15 @@ fn run() -> Result<()> {
 
     // let page = Page::new(&contents[page_start..page_end], header_offset)?;
     // println!("Page type: {:?}", page.page_type());
-    // println!("Num cells: {:?}", page.num_cells());
+    // println!("Num cells: {:?}", page.len());
     // println!("Cell content size: {:?}", page.cell_contents().len());
     // println!("Cell content offset: {}", page.cell_content_offset());
 
-    for cell in page.cells().iter() {
+    for cell in page.iter() {
         dump_table_cell(cell);
     }
 
-    // for i in 0..(page.num_cells() as usize) {
+    // for i in 0..(page.len() as usize) {
     //     let cell_offset = BigEndian::read_u16(
     //         &page.data[page.header_offset + page.header_length() + (i * 2)..],
     //     ) as usize;
