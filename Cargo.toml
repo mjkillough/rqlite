@@ -1,0 +1,8 @@
+[package]
+name = "rqlite"
+version = "0.1.0"
+authors = ["Michael Killough <michaeljkillough@gmail.com>"]
+
+[dependencies]
+byteorder = "1.0"
+error-chain = "0.10"
