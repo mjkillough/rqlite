@@ -9,6 +9,7 @@ use std::fs::File;
 use std::io::Cursor;
 use std::io::prelude::*;
 use std::ops::Index;
+use std::path::Path;
 use std::string::ToString;
 
 use byteorder::{BigEndian, ByteOrder};
@@ -129,10 +130,10 @@ impl<'a> Page<'a> {
 
     fn header_length(&self) -> usize {
         match self.page_type() {
-            IndexInterior => 12,
-            TableInterior => 12,
-            IndexLeaf => 8,
-            TableLeaf => 8,
+            PageType::IndexInterior => 12,
+            PageType::TableInterior => 12,
+            PageType::IndexLeaf => 8,
+            PageType::TableLeaf => 8,
         }
     }
 
@@ -226,6 +227,35 @@ impl DbHeader {
 }
 
 
+struct Pager {
+    file: File,
+}
+
+impl Pager {
+    fn open<P: AsRef<Path>>(path: P) -> Result<Pager> {
+        Ok(Pager { file: File::open(path)? })
+    }
+}
+
+
+fn dump_cell(buffer: &[u8]) -> Result<()> {
+    let mut cursor = Cursor::new(buffer);
+    let payload_length = read_varint(&mut cursor)?;
+    let rowid = read_varint(&mut cursor);
+    let position = cursor.position() as usize;
+    let fields = parse_record(&cursor.into_inner()[position..])?;
+    println!(
+        "Data: {:?}",
+        fields
+            .iter()
+            .map(|f| f.value().to_string())
+            .collect::<Vec<_>>()
+    );
+
+    Ok(())
+}
+
+
 fn run() -> Result<()> {
     let mut file = File::open("aFile.db")?;
     let mut contents = Vec::new();
@@ -239,24 +269,23 @@ fn run() -> Result<()> {
         header.num_pages
     );
 
-    let page = Page::new(&contents[..4096], 100)?;
+    let page_number = 2;
+    let page_start = page_number * header.page_size;
+    let page_end = page_start + header.page_size;
+    let header_offset = if page_number == 0 { 100 } else { 0 };
+
+    let page = Page::new(&contents[page_start..page_end], header_offset)?;
     println!("Page type: {:?}", page.page_type());
     println!("Num cells: {:?}", page.num_cells());
     println!("Cell content size: {:?}", page.cell_contents().len());
+    println!("Cell content offset: {}", page.cell_content_offset());
 
-    let mut cursor = Cursor::new(page.cell_contents());
-    let payload_length = read_varint(&mut cursor)?;
-    let rowid = read_varint(&mut cursor);
-    let position = cursor.position() as usize;
-    let fields = parse_record(&cursor.into_inner()[position..])?;
-    println!("Len: {}", fields.len());
-    println!(
-        "Data: {:#?}",
-        fields
-            .iter()
-            .map(|f| f.value().to_string())
-            .collect::<Vec<_>>()
-    );
+    for i in 0..(page.num_cells() as usize) {
+        let cell_offset = BigEndian::read_u16(
+            &page.data[page.header_offset + page.header_length() + (i * 2)..],
+        ) as usize;
+        dump_cell(&page.data[cell_offset..]);
+    }
 
     // parse_record(&page.cell_contents()[2..]);
 
