@@ -108,14 +108,17 @@ enum PageType {
 }
 
 
-struct Page {
+use std::marker::PhantomData;
+
+struct Page<C: Cell> {
     page_type: PageType,
     data: Bytes,
     header_offset: usize,
+    phantom: PhantomData<C>,
 }
 
-impl Page {
-    pub fn new(data: Bytes, header_offset: usize) -> Result<Page> {
+impl<C: Cell> Page<C> {
+    pub fn new(data: Bytes, header_offset: usize) -> Result<Page<C>> {
         let page_type = match data[header_offset] {
             // 0x01 => PageType::IndexInterior,
             0x05 => PageType::TableInterior,
@@ -128,6 +131,7 @@ impl Page {
             page_type,
             data,
             header_offset,
+            phantom: PhantomData,
         })
     }
 
@@ -190,22 +194,22 @@ impl Page {
         &self.data[self.cell_content_offset()..]
     }
 
-    fn cells(&self) -> Cells {
+    fn cells(&self) -> Cells<C> {
         Cells { page: self }
     }
 }
 
 
-struct Cells<'a> {
-    page: &'a Page,
+struct Cells<'a, C: 'a + Cell> {
+    page: &'a Page<C>,
 }
 
-impl<'a> Cells<'a> {
+impl<'a, C: Cell> Cells<'a, C> {
     pub fn len(&self) -> usize {
         self.page.num_cells()
     }
 
-    pub fn iter(&self) -> CellsIter {
+    pub fn iter(&self) -> CellsIter<C> {
         CellsIter {
             cells: self,
             idx: 0,
@@ -218,34 +222,58 @@ impl<'a> Cells<'a> {
         &self.page.data[offset..offset + len]
     }
 
-    fn index(&self, index: usize) -> Bytes {
+    fn index(&self, index: usize) -> Result<C> {
         if index > self.page.num_cells() {
             panic!("Attempted to access out-of-bounds cell: {}", index);
         }
 
         let cell_pointer = &self.cell_pointers()[index * 2..];
         let cell_offset = BigEndian::read_u16(cell_pointer) as usize;
-        self.page.data.slice_from(cell_offset)
+        let bytes = self.page.data.slice_from(cell_offset);
+        C::from_bytes(bytes)
     }
 }
 
 
-struct CellsIter<'a> {
-    cells: &'a Cells<'a>,
+struct CellsIter<'a, C: 'a + Cell> {
+    cells: &'a Cells<'a, C>,
     idx: usize,
 }
 
-impl<'a> Iterator for CellsIter<'a> {
-    type Item = Bytes;
+impl<'a, C: Cell> Iterator for CellsIter<'a, C> {
+    type Item = C;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx == self.cells.len() {
             None
         } else {
-            let v = self.cells.index(self.idx);
+            let v = self.cells.index(self.idx).unwrap();
             self.idx += 1;
             Some(v)
         }
+    }
+}
+
+
+trait Cell: Sized {
+    fn from_bytes(Bytes) -> Result<Self>;
+}
+
+
+struct TableLeafCell {
+    row_id: u64,
+    fields: Vec<record::Field>,
+}
+
+impl Cell for TableLeafCell {
+    fn from_bytes(bytes: Bytes) -> Result<Self> {
+        let mut cursor = Cursor::new(bytes);
+        let payload_length = read_varint(&mut cursor)?;
+        let row_id = read_varint(&mut cursor)?;
+        let position = cursor.position() as usize;
+        let fields = parse_record(cursor.into_inner().slice_from(position))?;
+
+        Ok(TableLeafCell { row_id, fields })
     }
 }
 
@@ -318,15 +346,10 @@ impl Pager {
 }
 
 
-fn dump_cell(buffer: Bytes) -> Result<()> {
-    let mut cursor = Cursor::new(buffer);
-    let payload_length = read_varint(&mut cursor)?;
-    let rowid = read_varint(&mut cursor);
-    let position = cursor.position() as usize;
-    let fields = parse_record(cursor.into_inner().slice_from(position))?;
+fn dump_table_cell(cell: TableLeafCell) -> Result<()> {
     println!(
         "Data: {:?}",
-        fields
+        cell.fields
             .iter()
             .map(|f| f.value().to_string())
             .collect::<Vec<_>>()
@@ -346,7 +369,7 @@ fn run() -> Result<()> {
     );
 
 
-    let page = Page::new(pager.get_page(1)?, 100)?;
+    let page = Page::<TableLeafCell>::new(pager.get_page(1)?, 100)?;
 
     // let mut file = File::open("aFile.db")?;
     // let mut contents = Vec::new();
@@ -366,7 +389,7 @@ fn run() -> Result<()> {
     // println!("Cell content offset: {}", page.cell_content_offset());
 
     for cell in page.cells().iter() {
-        dump_cell(cell);
+        dump_table_cell(cell);
     }
 
     // for i in 0..(page.num_cells() as usize) {
