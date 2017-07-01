@@ -301,7 +301,9 @@ impl Pager {
 
         let mut buffer = [0; 100];
         file.read_exact(&mut buffer)
-            .chain_err(|| ErrorKind::InvalidDbHeader("Error reading header".to_owned()))?; // XXX String?
+            .chain_err(|| {
+                ErrorKind::InvalidDbHeader("Error reading header".to_owned())
+            })?; // XXX String?
         let header = DbHeader::parse(&buffer)?;
 
         Ok(Pager { file, header })
@@ -311,7 +313,8 @@ impl Pager {
         // SQLite counts pages from 1.
         let number = number - 1;
 
-        self.file.seek(SeekFrom::Start((number * self.header.page_size) as u64));
+        self.file
+            .seek(SeekFrom::Start((number * self.header.page_size) as u64));
         let mut buffer = vec![0; self.header.page_size];
         self.file.read_exact(&mut buffer)?;
         Ok(buffer.into())
