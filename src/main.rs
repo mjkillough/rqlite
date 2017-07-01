@@ -189,9 +189,69 @@ impl Page {
     fn cell_contents(&self) -> &[u8] {
         &self.data[self.cell_content_offset()..]
     }
-    // fn cell_pointers(&self) ->
+
+    fn cells(&self) -> Cells {
+        Cells { page: self }
+    }
 }
 
+
+struct Cells<'a> {
+    page: &'a Page,
+}
+
+impl<'a> Cells<'a> {
+    pub fn len(&self) -> usize {
+        self.page.num_cells()
+    }
+
+    pub fn iter(&self) -> CellsIter {
+        CellsIter {
+            cells: self,
+            idx: 0,
+        }
+    }
+
+    fn cell_pointers(&self) -> &[u8] {
+        let offset = self.page.header_offset + self.page.header_length();
+        let len = self.page.num_cells() * 2;
+        &self.page.data[offset..offset + len]
+    }
+}
+
+impl<'a> Index<usize> for Cells<'a> {
+    type Output = [u8];
+
+    fn index(&self, index: usize) -> &Self::Output {
+        if index > self.page.num_cells() {
+            panic!("Attempted to access out-of-bounds cell: {}", index);
+        }
+
+        let cell_pointer = self.cell_pointers()[index * 2..];
+        let cell_offset = BigEndian::read_u16(&cell_pointer) as usize;
+        &self.page.data[cell_offset..]
+    }
+}
+
+
+struct CellsIter<'a> {
+    cells: &'a Cells<'a>,
+    idx: usize,
+}
+
+impl<'a> Iterator for CellsIter<'a> {
+    type Item = &'a [u8];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.idx == self.cells.len() {
+            None
+        } else {
+            let v = &self.cells[self.idx];
+            self.idx += 1;
+            Some(v)
+        }
+    }
+}
 
 
 struct DbHeader {
@@ -306,12 +366,16 @@ fn run() -> Result<()> {
     // println!("Cell content size: {:?}", page.cell_contents().len());
     // println!("Cell content offset: {}", page.cell_content_offset());
 
-    for i in 0..(page.num_cells() as usize) {
-        let cell_offset = BigEndian::read_u16(
-            &page.data[page.header_offset + page.header_length() + (i * 2)..],
-        ) as usize;
-        dump_cell(&page.data[cell_offset..]);
+    for cell in page.cells().iter() {
+        dump_cell(cell);
     }
+
+    // for i in 0..(page.num_cells() as usize) {
+    //     let cell_offset = BigEndian::read_u16(
+    //         &page.data[page.header_offset + page.header_length() + (i * 2)..],
+    //     ) as usize;
+    //     dump_cell(&page.data[cell_offset..]);
+    // }
 
     parse_record(&page.cell_contents()[2..]);
 
