@@ -227,8 +227,8 @@ impl<'a> Index<usize> for Cells<'a> {
             panic!("Attempted to access out-of-bounds cell: {}", index);
         }
 
-        let cell_pointer = self.cell_pointers()[index * 2..];
-        let cell_offset = BigEndian::read_u16(&cell_pointer) as usize;
+        let cell_pointer = &self.cell_pointers()[index * 2..];
+        let cell_offset = BigEndian::read_u16(cell_pointer) as usize;
         &self.page.data[cell_offset..]
     }
 }
