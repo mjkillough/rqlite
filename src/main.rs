@@ -1,4 +1,5 @@
 extern crate byteorder;
+extern crate bytes;
 #[macro_use]
 extern crate error_chain;
 
@@ -6,13 +7,15 @@ mod errors;
 mod record;
 
 use std::fs::File;
-use std::io::Cursor;
+use std::io::{Cursor, SeekFrom};
 use std::io::prelude::*;
+use std::iter::Iterator;
 use std::ops::Index;
 use std::path::Path;
 use std::string::ToString;
 
 use byteorder::{BigEndian, ByteOrder};
+use bytes::{Bytes, BytesMut};
 
 use errors::*;
 use record::parse_record;
@@ -98,25 +101,25 @@ mod test {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum PageType {
-    IndexInterior,
+    // IndexInterior,
     TableInterior,
-    IndexLeaf,
+    // IndexLeaf,
     TableLeaf,
 }
 
 
-struct Page<'a> {
+struct Page {
     page_type: PageType,
-    data: &'a [u8],
+    data: Bytes,
     header_offset: usize,
 }
 
-impl<'a> Page<'a> {
-    pub fn new(data: &'a [u8], header_offset: usize) -> Result<Page<'a>> {
+impl Page {
+    pub fn new(data: Bytes, header_offset: usize) -> Result<Page> {
         let page_type = match data[header_offset] {
-            0x01 => PageType::IndexInterior,
+            // 0x01 => PageType::IndexInterior,
             0x05 => PageType::TableInterior,
-            0x0A => PageType::IndexLeaf,
+            // 0x0A => PageType::IndexLeaf,
             0x0D => PageType::TableLeaf,
             _ => Err("Unknown B-Tree page type")?,
         };
@@ -130,9 +133,9 @@ impl<'a> Page<'a> {
 
     fn header_length(&self) -> usize {
         match self.page_type() {
-            PageType::IndexInterior => 12,
+            // PageType::IndexInterior => 12,
             PageType::TableInterior => 12,
-            PageType::IndexLeaf => 8,
+            // PageType::IndexLeaf => 8,
             PageType::TableLeaf => 8,
         }
     }
@@ -156,8 +159,8 @@ impl<'a> Page<'a> {
     }
 
     // "The two-byte integer at offset 3 gives the number of cells on the page."
-    fn num_cells(&self) -> u16 {
-        BigEndian::read_u16(&self.header()[3..5])
+    fn num_cells(&self) -> usize {
+        BigEndian::read_u16(&self.header()[3..5]) as usize
     }
 
     // "The two-byte integer at offset 5 designates the start of the cell
@@ -229,11 +232,29 @@ impl DbHeader {
 
 struct Pager {
     file: File,
+    header: DbHeader,
 }
 
 impl Pager {
     fn open<P: AsRef<Path>>(path: P) -> Result<Pager> {
-        Ok(Pager { file: File::open(path)? })
+        let mut file = File::open(path)?;
+
+        let mut buffer = [0; 100];
+        file.read_exact(&mut buffer)
+            .chain_err(|| ErrorKind::InvalidDbHeader("Error reading header".to_owned()))?; // XXX String?
+        let header = DbHeader::parse(&buffer)?;
+
+        Ok(Pager { file, header })
+    }
+
+    fn get_page(&mut self, number: usize) -> Result<Bytes> {
+        // SQLite counts pages from 1.
+        let number = number - 1;
+
+        self.file.seek(SeekFrom::Start((number * self.header.page_size) as u64));
+        let mut buffer = vec![0; self.header.page_size];
+        self.file.read_exact(&mut buffer)?;
+        Ok(buffer.into())
     }
 }
 
@@ -257,28 +278,33 @@ fn dump_cell(buffer: &[u8]) -> Result<()> {
 
 
 fn run() -> Result<()> {
-    let mut file = File::open("aFile.db")?;
-    let mut contents = Vec::new();
-    file.read_to_end(&mut contents)?;
-
-    let header = DbHeader::parse(&contents)?;
+    let mut pager = Pager::open("aFile.db")?;
     println!(
         "Page Size: {}, Reserved Bytes Per Page: {}, Num Pages: {}",
-        header.page_size,
-        header.reserved_byes_per_page,
-        header.num_pages
+        pager.header.page_size,
+        pager.header.reserved_byes_per_page,
+        pager.header.num_pages
     );
 
-    let page_number = 2;
-    let page_start = page_number * header.page_size;
-    let page_end = page_start + header.page_size;
-    let header_offset = if page_number == 0 { 100 } else { 0 };
 
-    let page = Page::new(&contents[page_start..page_end], header_offset)?;
-    println!("Page type: {:?}", page.page_type());
-    println!("Num cells: {:?}", page.num_cells());
-    println!("Cell content size: {:?}", page.cell_contents().len());
-    println!("Cell content offset: {}", page.cell_content_offset());
+    let page = Page::new(pager.get_page(1)?, 100)?;
+
+    // let mut file = File::open("aFile.db")?;
+    // let mut contents = Vec::new();
+    // file.read_to_end(&mut contents)?;
+
+    // let header = DbHeader::parse(&contents)?;
+
+    // let page_number = 2;
+    // let page_start = page_number * header.page_size;
+    // let page_end = page_start + header.page_size;
+    // let header_offset = if page_number == 0 { 100 } else { 0 };
+
+    // let page = Page::new(&contents[page_start..page_end], header_offset)?;
+    // println!("Page type: {:?}", page.page_type());
+    // println!("Num cells: {:?}", page.num_cells());
+    // println!("Cell content size: {:?}", page.cell_contents().len());
+    // println!("Cell content offset: {}", page.cell_content_offset());
 
     for i in 0..(page.num_cells() as usize) {
         let cell_offset = BigEndian::read_u16(
@@ -287,7 +313,7 @@ fn run() -> Result<()> {
         dump_cell(&page.data[cell_offset..]);
     }
 
-    // parse_record(&page.cell_contents()[2..]);
+    parse_record(&page.cell_contents()[2..]);
 
     Ok(())
 }
