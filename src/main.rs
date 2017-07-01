@@ -17,9 +17,7 @@ use errors::*;
 use record::parse_record;
 
 
-/// Read's a 64-bit variable length integer from the start of the buffer.
-///
-/// Returns the integer and the number of bytes read from the buffer.
+/// Read's a 64-bit variable length integer.
 ///
 /// From sqlite3's btreeInt.h:
 ///
@@ -31,7 +29,7 @@ use record::parse_record;
 /// > As a special case, all 8 bytes of the 9th byte are used as data.  This
 /// > allows a 64-bit integer to be encoded in 9 bytes.
 ///
-/// This function panics if the buffer is less than 9 bytes long and the final
+/// This function returns "InvalidVarint" if less than 9 bytes long and the final
 /// byte has bit 8 set.
 fn read_varint<R: Read>(mut data: R) -> Result<u64> {
     // sqlite3's implementation in util.c seems to have manually unrolled the
@@ -45,7 +43,8 @@ fn read_varint<R: Read>(mut data: R) -> Result<u64> {
     let mut seen_last_byte = false;
     for i in 0..8 {
         let mut buffer = [0];
-        data.read_exact(&mut buffer)?;
+        data.read_exact(&mut buffer)
+            .chain_err(|| ErrorKind::InvalidVarint)?;
         value = (value << 7) | ((buffer[0] & 0x7F) as u64);
         if buffer[0] & 0x80 == 0 {
             seen_last_byte = true;
@@ -53,9 +52,9 @@ fn read_varint<R: Read>(mut data: R) -> Result<u64> {
         }
     }
     if !seen_last_byte {
-        // We need to include all bits from the final (9th) byte.
         let mut buffer = [0];
-        data.read_exact(&mut buffer)?;
+        data.read_exact(&mut buffer)
+            .chain_err(|| ErrorKind::InvalidVarint)?;
         value = (value << 8) | (buffer[0] as u64);
     }
 
