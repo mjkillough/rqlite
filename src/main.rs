@@ -96,10 +96,6 @@ mod test {
 }
 
 
-
-
-
-
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum PageType {
     IndexInterior,
@@ -195,10 +191,54 @@ impl<'a> Page<'a> {
 
 
 
+struct DbHeader {
+    page_size: usize,
+    reserved_byes_per_page: usize,
+    num_pages: usize,
+}
+
+impl DbHeader {
+    fn parse(data: &[u8]) -> Result<DbHeader> {
+        use ErrorKind::InvalidDbHeader;
+
+        const s: &'static str = "SQLite format 3\0";
+        if data.len() < s.len() || &data[..s.len()] != s.as_bytes() {
+            bail!(InvalidDbHeader(
+                format!("Invalid header string: {:?}", &data[..s.len()]),
+            ));
+        }
+
+        // "The database page size in bytes. Must be a power of two between 512
+        //  and 32768 inclusive, or the value 1 representing a page size of 65536."
+        let page_size = match BigEndian::read_u16(&data[16..]) {
+            1 => 65536,
+            n if n >= 512 && n <= 32768 && (n & (n - 1)) == 0 => n as usize,
+            n => bail!(InvalidDbHeader(format!("Invalid page size: {}", n))),
+        };
+
+        Ok(DbHeader {
+            page_size,
+            // "Bytes of unused "reserved" space at the end of each page. Usually 0."
+            reserved_byes_per_page: data[20] as usize,
+            // "Size of the database file in pages. The "in-header database size"."
+            num_pages: BigEndian::read_u32(&data[28..]) as usize,
+        })
+    }
+}
+
+
 fn run() -> Result<()> {
     let mut file = File::open("aFile.db")?;
     let mut contents = Vec::new();
     file.read_to_end(&mut contents)?;
+
+    let header = DbHeader::parse(&contents)?;
+    println!(
+        "Page Size: {}, Reserved Bytes Per Page: {}, Num Pages: {}",
+        header.page_size,
+        header.reserved_byes_per_page,
+        header.num_pages
+    );
 
     let page = Page::new(&contents[..4096], 100)?;
     println!("Page type: {:?}", page.page_type());
