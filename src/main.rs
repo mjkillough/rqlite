@@ -217,19 +217,15 @@ impl<'a> Cells<'a> {
         let len = self.page.num_cells() * 2;
         &self.page.data[offset..offset + len]
     }
-}
 
-impl<'a> Index<usize> for Cells<'a> {
-    type Output = [u8];
-
-    fn index(&self, index: usize) -> &Self::Output {
+    fn index(&self, index: usize) -> Bytes {
         if index > self.page.num_cells() {
             panic!("Attempted to access out-of-bounds cell: {}", index);
         }
 
         let cell_pointer = &self.cell_pointers()[index * 2..];
         let cell_offset = BigEndian::read_u16(cell_pointer) as usize;
-        &self.page.data[cell_offset..]
+        self.page.data.slice_from(cell_offset)
     }
 }
 
@@ -240,13 +236,13 @@ struct CellsIter<'a> {
 }
 
 impl<'a> Iterator for CellsIter<'a> {
-    type Item = &'a [u8];
+    type Item = Bytes;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx == self.cells.len() {
             None
         } else {
-            let v = &self.cells[self.idx];
+            let v = self.cells.index(self.idx);
             self.idx += 1;
             Some(v)
         }
@@ -322,12 +318,12 @@ impl Pager {
 }
 
 
-fn dump_cell(buffer: &[u8]) -> Result<()> {
+fn dump_cell(buffer: Bytes) -> Result<()> {
     let mut cursor = Cursor::new(buffer);
     let payload_length = read_varint(&mut cursor)?;
     let rowid = read_varint(&mut cursor);
     let position = cursor.position() as usize;
-    let fields = parse_record(&cursor.into_inner()[position..])?;
+    let fields = parse_record(cursor.into_inner().slice_from(position))?;
     println!(
         "Data: {:?}",
         fields
@@ -380,7 +376,7 @@ fn run() -> Result<()> {
     //     dump_cell(&page.data[cell_offset..]);
     // }
 
-    parse_record(&page.cell_contents()[2..]);
+    // parse_record(page.cell_contents().slice_from(2));
 
     Ok(())
 }

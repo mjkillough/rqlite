@@ -2,6 +2,7 @@ use std::io::Cursor;
 use std::io::prelude::*;
 use std::string::ToString;
 
+use bytes::Bytes;
 use byteorder::{BigEndian, ByteOrder};
 
 use errors::*;
@@ -46,66 +47,65 @@ impl FieldType {
 
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum FieldValue<'a> {
+pub enum FieldValue {
     Null,
     Integer(u64),
     Float(f64),
-    Blob(&'a [u8]),
-    Str(&'a [u8]),
+    Blob(Bytes),
+    Str(Bytes),
 }
 
 // TODO: manual Debug instead?
-impl<'a> ToString for FieldValue<'a> {
+impl ToString for FieldValue {
     fn to_string(&self) -> String {
         use self::FieldValue::*;
         match *self {
             Null => "Null".to_owned(),
             Integer(i) => i.to_string(),
             Float(f) => f.to_string(),
-            Blob(b) => format!("{:?}", b),
-            Str(s) => String::from_utf8_lossy(s).into_owned(),
+            Blob(ref b) => format!("{:?}", b),
+            Str(ref s) => String::from_utf8_lossy(&s).into_owned(),
         }
     }
 }
 
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub struct Field<'a> {
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Field {
     ty: FieldType,
-    buffer: &'a [u8],
+    bytes: Bytes,
 }
 
-impl<'a> Field<'a> {
-    pub fn value(&self) -> FieldValue<'a> {
-        let buffer = self.buffer;
+impl Field {
+    pub fn value(&self) -> FieldValue {
+        let bytes = &self.bytes;
         match self.ty {
             FieldType::Null => FieldValue::Null,
-            FieldType::U8 => FieldValue::Integer(buffer[0] as u64),
-            FieldType::U16 => FieldValue::Integer(BigEndian::read_u16(buffer) as u64),
+            FieldType::U8 => FieldValue::Integer(bytes[0] as u64),
+            FieldType::U16 => FieldValue::Integer(BigEndian::read_u16(&bytes) as u64),
             FieldType::U24 => FieldValue::Integer(
-                (((buffer[0] as u64) << 16) | ((buffer[1] as u64) << 8) | (buffer[2] as u64)) as
-                    u64,
+                (((bytes[0] as u64) << 16) | ((bytes[1] as u64) << 8) | (bytes[2] as u64)) as u64,
             ),
-            FieldType::U32 => FieldValue::Integer(BigEndian::read_u32(buffer) as u64),
+            FieldType::U32 => FieldValue::Integer(BigEndian::read_u32(&bytes) as u64),
             FieldType::U48 => FieldValue::Integer(
-                (((buffer[0] as u64) << 40) | ((buffer[1] as u64) << 32) |
-                     ((buffer[2] as u64) << 24) | ((buffer[3] as u64) << 16) |
-                     ((buffer[4] as u64) << 8) |
-                     (buffer[5] as u64)) as u64,
+                (((bytes[0] as u64) << 40) | ((bytes[1] as u64) << 32) |
+                     ((bytes[2] as u64) << 24) | ((bytes[3] as u64) << 16) |
+                     ((bytes[4] as u64) << 8) |
+                     (bytes[5] as u64)) as u64,
             ),
-            FieldType::U64 => FieldValue::Integer(BigEndian::read_u64(buffer)),
-            FieldType::F64 => FieldValue::Float(BigEndian::read_f64(buffer)),
+            FieldType::U64 => FieldValue::Integer(BigEndian::read_u64(&bytes)),
+            FieldType::F64 => FieldValue::Float(BigEndian::read_f64(&bytes)),
             FieldType::Zero => FieldValue::Integer(0 as u64),
             FieldType::One => FieldValue::Integer(1 as u64),
-            FieldType::Blob(len) => FieldValue::Blob(&buffer[..len]),
-            FieldType::Str(len) => FieldValue::Str(&buffer[..len]),
+            FieldType::Blob(len) => FieldValue::Blob(bytes.clone()),
+            FieldType::Str(len) => FieldValue::Str(bytes.clone()),
         }
     }
 }
 
 
-pub fn parse_record(record: &[u8]) -> Result<Vec<Field>> {
-    let mut cursor = Cursor::new(record);
+pub fn parse_record(bytes: Bytes) -> Result<Vec<Field>> {
+    let mut cursor = Cursor::new(bytes);
     let header_size = read_varint(&mut cursor)?;
 
     let mut field_types = Vec::new();
@@ -131,7 +131,7 @@ pub fn parse_record(record: &[u8]) -> Result<Vec<Field>> {
     }
 
     let mut offset = cursor.position() as usize;
-    let buffer = cursor.into_inner();
+    let bytes = cursor.into_inner();
     Ok(
         field_types
             .into_iter()
@@ -139,7 +139,7 @@ pub fn parse_record(record: &[u8]) -> Result<Vec<Field>> {
                 let size_of = ty.size_of();
                 let field = Field {
                     ty,
-                    buffer: &buffer[offset..offset + size_of],
+                    bytes: bytes.slice(offset, offset + size_of),
                 };
                 offset += size_of;
                 field
