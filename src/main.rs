@@ -14,6 +14,8 @@ mod table;
 mod types;
 mod util;
 
+use std::fmt::Display;
+use std::io::{self, Read, Write};
 use std::rc::Rc;
 
 use btree::BTree;
@@ -23,26 +25,21 @@ use record::Field;
 use schema::Schema;
 use table::Table;
 
-use std::fmt::Display;
-
 use nom_sql::{SqlQuery, SqlType, CreateTableStatement, SelectStatement, FieldExpression};
 
 
+#[derive(Debug)]
 struct SelectOp {
     table: String,
     columns: Vec<String>,
 }
 
 impl SelectOp {
-    fn from_sql(sql: &str) -> Result<SelectOp> {
-        let parsed = nom_sql::parser::parse_query(sql)?;
-        let (mut tables, fields) = match parsed {
-            SqlQuery::Select(SelectStatement { tables, fields, .. }) => (tables, fields),
-            _ => bail!("Expected SELECT: {}", sql),
-        };
+    fn from_stmt(stmt: SelectStatement) -> Result<SelectOp> {
+        let (mut tables, fields) = (stmt.tables, stmt.fields);
 
         if tables.len() != 1 {
-            bail!("Expected 1 table to appear in SELECT statement: {}", sql);
+            bail!("Expected 1 table to appear in SELECT statement");
         }
         let table = tables.pop().unwrap().name;
 
@@ -50,7 +47,7 @@ impl SelectOp {
             .into_iter()
             .map(|field| match field {
                 FieldExpression::Col(nom_sql::Column { name, .. }) => Ok(name),
-                _ => bail!("Not implemented: non-column fields in SELECT: {}", sql),
+                _ => bail!("Not implemented: non-column fields in SELECT"),
             })
             .collect();
 
@@ -73,6 +70,57 @@ fn run() -> Result<()> {
 
     let schema = Schema::new(pager)?;
     println!("Tables: {:#?}", schema.tables()?);
+
+    loop {
+        print!("> ");
+        io::stdout().flush();
+        let mut buffer = String::new();
+        io::stdin().read_line(&mut buffer)?;
+
+        if buffer.trim() == ".quit" {
+            break;
+        }
+
+        let statement = match nom_sql::parser::parse_query(&buffer) {
+            Ok(stmt) => stmt,
+            Err(e) => {
+                println!("Error parsing statement: {}", e);
+                continue;
+            }
+        };
+
+        // XXX Combinators please! (It's late and I'm tired).
+        match statement {
+            SqlQuery::Select(select) => {
+                match SelectOp::from_stmt(select) {
+                    Ok(op) => {
+                        match schema.table(op.table) {
+                            Ok(table) => {
+                                match table.select(op.columns) {
+                                    Ok(result) => println!("{:?}", result),
+                                    Err(e) => {
+                                        println!("Error running query: {}", e);
+                                        continue;
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                println!("Error getting table: {}", e);
+                                continue;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("Error processing statement: {}", e);
+                        continue;
+                    }
+                }
+            }
+            _ => println!("Unsupported statement - SELECT only please"),
+        };
+
+
+    }
 
     Ok(())
 }

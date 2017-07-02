@@ -146,6 +146,10 @@ impl Table {
         })
     }
 
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
     pub fn select<S: Into<String>>(&self, columns: Vec<S>) -> Result<Vec<HashMap<String, Field>>> {
         let columns: Vec<String> = columns.into_iter().map(|s| s.into()).collect();
         let indices = self.schema.column_indices(&columns)?;

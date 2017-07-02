@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use errors::*;
@@ -32,7 +33,7 @@ impl Schema {
     }
 
     pub fn tables(&self) -> Result<Vec<Table>> {
-        let v: Result<Vec<Table>> = self.schema_table
+        self.schema_table
             .select(vec!["type", "tbl_name", "rootpage", "sql"])?
             .iter()
             .filter(|table| {
@@ -45,7 +46,16 @@ impl Schema {
                 let sql = String::from_utf8(table["sql"].value().text()?.to_vec())?;
                 Table::new(self.pager.clone(), page_num, name, &sql)
             })
-            .collect();
-        Ok(v?)
+            .collect()
+    }
+
+    pub fn table<S: AsRef<str>>(&self, name: S) -> Result<Table> {
+        // XXX we should defs re-use that iterator up there
+        self.tables()?
+            .into_iter()
+            .find(|t| t.name() == name.as_ref())
+            .ok_or(
+                ErrorKind::TableDoesNotExist(name.as_ref().to_owned()).into(),
+            )
     }
 }
