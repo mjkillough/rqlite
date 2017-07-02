@@ -7,3 +7,6 @@ authors = ["Michael Killough <michaeljkillough@gmail.com>"]
 byteorder = "1.0"
 bytes = "0.4"
 error-chain = "0.10"
+
+[dependencies.nom_sql]
+path = "./nom-sql"

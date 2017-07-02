@@ -6,11 +6,12 @@ use bytes::Bytes;
 use byteorder::{BigEndian, ByteOrder};
 
 use errors::*;
+use types::Type;
 use util::read_varint;
 
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum FieldType {
+enum FieldType {
     Null,
     U8,
     U16,
@@ -54,6 +55,63 @@ pub enum FieldValue {
     Blob(Bytes),
     Str(Bytes),
 }
+
+
+impl FieldValue {
+    pub fn field_type(&self) -> Type {
+        match *self {
+            FieldValue::Null => Type::Null,
+            FieldValue::Integer(_) => Type::Integer,
+            FieldValue::Float(_) => Type::Float,
+            FieldValue::Blob(_) => Type::Blob,
+            FieldValue::Str(_) => Type::Text,
+        }
+    }
+
+    pub fn null(&self) -> Result<()> {
+        match self.field_type() {
+            Type::Null => Ok(()),
+            actual => Err(ErrorKind::UnexpectedType(Type::Null, actual).into()),
+        }
+    }
+
+    pub fn integer(&self) -> Result<u64> {
+        match *self {
+            FieldValue::Integer(i) => Ok(i),
+            _ => Err(
+                ErrorKind::UnexpectedType(Type::Integer, self.field_type()).into(),
+            ),
+        }
+    }
+
+    pub fn float(&self) -> Result<f64> {
+        match *self {
+            FieldValue::Float(f) => Ok(f),
+            _ => Err(
+                ErrorKind::UnexpectedType(Type::Float, self.field_type()).into(),
+            ),
+        }
+    }
+
+    pub fn blob(&self) -> Result<&[u8]> {
+        match *self {
+            FieldValue::Blob(ref b) => Ok(b),
+            _ => Err(
+                ErrorKind::UnexpectedType(Type::Blob, self.field_type()).into(),
+            ),
+        }
+    }
+
+    pub fn text(&self) -> Result<&[u8]> {
+        match *self {
+            FieldValue::Str(ref s) => Ok(s),
+            _ => Err(
+                ErrorKind::UnexpectedType(Type::Text, self.field_type()).into(),
+            ),
+        }
+    }
+}
+
 
 // TODO: manual Debug instead?
 impl ToString for FieldValue {

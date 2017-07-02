@@ -1,0 +1,3 @@
+[submodule "nom-sql"]
+	path = nom-sql
+	url = https://github.com/mjkillough/nom-sql.git
