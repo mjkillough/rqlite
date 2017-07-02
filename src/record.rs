@@ -6,7 +6,7 @@ use bytes::Bytes;
 use byteorder::{BigEndian, ByteOrder};
 
 use errors::*;
-use super::read_varint;
+use util::read_varint;
 
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
