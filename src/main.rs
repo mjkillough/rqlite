@@ -11,6 +11,7 @@ use std::fs::File;
 use std::io::{Cursor, SeekFrom};
 use std::io::prelude::*;
 use std::iter::Iterator;
+use std::mem;
 use std::ops::Index;
 use std::path::Path;
 use std::rc::Rc;
@@ -365,7 +366,7 @@ where
     Interior {
         pager: Rc<Pager>,
         pages: PageIter<I>,
-        visited_right: bool,
+        right: Option<usize>,
         inner: Option<Box<BTreeIter<I, L>>>,
         phantom: PhantomData<(I, L)>,
     },
@@ -380,18 +381,16 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         match *self {
-            BTreeIter::Leaf { ref mut iter, .. } => {
-                iter.next()
-            }
+            BTreeIter::Leaf { ref mut iter, .. } => iter.next(),
             BTreeIter::Interior {
                 ref pager,
                 ref mut pages,
+                ref mut right,
                 ref mut inner,
-                ref mut visited_right,
                 ..
             } => {
                 loop {
-                    match ::std::mem::replace(inner, None) {
+                    match mem::replace(inner, None) {
                         Some(mut iter) => {
                             match iter.next() {
                                 None => {
@@ -407,9 +406,8 @@ where
                             let page_num = match pages.next() {
                                 Some(cell) => cell.left(),
                                 None => {
-                                    if !*visited_right {
-                                        *visited_right = true;
-                                        pages.page.right()
+                                    if let Some(page_num) = mem::replace(right, None) {
+                                        page_num
                                     } else {
                                         return None;
                                     }
