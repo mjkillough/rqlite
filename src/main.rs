@@ -6,12 +6,14 @@ extern crate error_chain;
 mod errors;
 mod record;
 
+use std::cell::RefCell;
 use std::fs::File;
 use std::io::{Cursor, SeekFrom};
 use std::io::prelude::*;
 use std::iter::Iterator;
 use std::ops::Index;
 use std::path::Path;
+use std::rc::Rc;
 use std::string::ToString;
 
 use byteorder::{BigEndian, ByteOrder};
@@ -110,15 +112,15 @@ enum PageType {
 
 use std::marker::PhantomData;
 
-struct Page<C: Cell> {
+#[derive(Clone, Debug)]
+struct Page {
     page_type: PageType,
     data: Bytes,
     header_offset: usize,
-    phantom: PhantomData<C>,
 }
 
-impl<C: Cell> Page<C> {
-    pub fn new(data: Bytes, header_offset: usize) -> Result<Page<C>> {
+impl Page {
+    pub fn new(data: Bytes, header_offset: usize) -> Result<Page> {
         let page_type = match data[header_offset] {
             // 0x01 => PageType::IndexInterior,
             0x05 => PageType::TableInterior,
@@ -131,7 +133,6 @@ impl<C: Cell> Page<C> {
             page_type,
             data,
             header_offset,
-            phantom: PhantomData,
         })
     }
 
@@ -183,11 +184,11 @@ impl<C: Cell> Page<C> {
     // "The four-byte page number at offset 8 is the right-most pointer. This
     //  value appears in the header of interior b-tree pages only and is omitted
     //  from all other pages."
-    fn rightmost_pointer(&self) -> u32 {
+    fn right(&self) -> usize {
         if self.header_length() != 12 {
             unreachable!();
         }
-        BigEndian::read_u32(&self.header()[8..12])
+        BigEndian::read_u32(&self.header()[8..12]) as usize
     }
 
     fn cell_pointers(&self) -> &[u8] {
@@ -196,39 +197,35 @@ impl<C: Cell> Page<C> {
         &self.data[offset..offset + len]
     }
 
-    pub fn cell(&self, index: usize) -> Result<C> {
+    pub fn cell(&self, index: usize) -> Bytes {
         if index > self.len() {
             panic!("Attempted to access out-of-bounds cell: {}", index);
         }
 
         let cell_pointer = &self.cell_pointers()[index * 2..];
         let cell_offset = BigEndian::read_u16(cell_pointer) as usize;
-        let bytes = self.data.slice_from(cell_offset);
-        C::from_bytes(bytes)
+        self.data.slice_from(cell_offset)
     }
 
-    pub fn iter(&self) -> PageIter<C> {
-        PageIter {
-            page: self,
-            idx: 0,
-        }
+    pub fn iter(self) -> PageIter {
+        PageIter { page: self, idx: 0 }
     }
 }
 
 
-struct PageIter<'a, C: 'a + Cell> {
-    page: &'a Page<C>,
+struct PageIter {
+    page: Page,
     idx: usize,
 }
 
-impl<'a, C: Cell> Iterator for PageIter<'a, C> {
-    type Item = C;
+impl Iterator for PageIter {
+    type Item = Bytes;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx == self.page.len() {
             None
         } else {
-            let v = self.page.cell(self.idx).unwrap();
+            let v = self.page.cell(self.idx);
             self.idx += 1;
             Some(v)
         }
@@ -237,7 +234,14 @@ impl<'a, C: Cell> Iterator for PageIter<'a, C> {
 
 
 trait Cell: Sized {
+    type Key; // TODO: PartialOrd?
+
     fn from_bytes(Bytes) -> Result<Self>;
+    fn key(&self) -> &Self::Key;
+}
+
+trait InteriorCell: Cell {
+    fn left(&self) -> usize;
 }
 
 
@@ -247,6 +251,8 @@ struct TableLeafCell {
 }
 
 impl Cell for TableLeafCell {
+    type Key = u64;
+
     fn from_bytes(bytes: Bytes) -> Result<Self> {
         let mut cursor = Cursor::new(bytes);
         let payload_length = read_varint(&mut cursor)?;
@@ -255,6 +261,172 @@ impl Cell for TableLeafCell {
         let fields = parse_record(cursor.into_inner().slice_from(position))?;
 
         Ok(TableLeafCell { row_id, fields })
+    }
+
+    fn key(&self) -> &Self::Key {
+        &self.row_id
+    }
+}
+
+
+struct TableInteriorCell {
+    row_id: u64,
+    left: usize,
+}
+
+impl Cell for TableInteriorCell {
+    type Key = u64;
+
+    fn from_bytes(bytes: Bytes) -> Result<Self> {
+        let left = BigEndian::read_u32(&bytes) as usize;
+        let row_id = read_varint(&mut Cursor::new(bytes))?;
+        Ok(TableInteriorCell { row_id, left })
+    }
+
+    fn key(&self) -> &Self::Key {
+        &self.row_id
+    }
+}
+
+impl InteriorCell for TableInteriorCell {
+    fn left(&self) -> usize {
+        self.left
+    }
+}
+
+
+struct BTree<I, L>
+where
+    I: InteriorCell,
+    L: Cell,
+{
+    root: Page,
+    pager: Rc<Pager>,
+    phantom: PhantomData<(I, L)>,
+}
+
+impl<I, L> BTree<I, L>
+where
+    I: InteriorCell,
+    L: Cell,
+{
+    fn new(pager: Rc<Pager>, page_num: usize) -> Result<BTree<I, L>> {
+        let bytes = pager.get_page(page_num)?;
+        let header_offset = if page_num == 1 { 100 } else { 0 };
+        let root = Page::new(bytes, header_offset)?;
+
+        Ok(BTree {
+            root,
+            pager,
+            phantom: PhantomData,
+        })
+    }
+
+    fn iter(self) -> BTreeIter<I, L> {
+        match self.root.page_type() {
+            PageType::TableInterior => {
+                BTreeIter::Interior {
+                    pager: self.pager,
+                    pages: self.root.iter(),
+                    inner: None,
+                    phantom: PhantomData,
+                    visited_right: false,
+                }
+            }
+            PageType::TableLeaf => {
+                BTreeIter::Leaf {
+                    iter: self.root.iter(),
+                    phantom: PhantomData,
+                }
+            }
+        }
+    }
+}
+
+impl<I, L> Clone for BTree<I, L>
+where
+    I: InteriorCell,
+    L: Cell,
+{
+    fn clone(&self) -> Self {
+        BTree {
+            root: self.root.clone(),
+            pager: self.pager.clone(),
+            phantom: PhantomData,
+        }
+    }
+}
+
+enum BTreeIter<I, L>
+where
+    I: InteriorCell,
+    L: Cell,
+{
+    Leaf {
+        iter: PageIter,
+        phantom: PhantomData<(I, L)>,
+    },
+    Interior {
+        pager: Rc<Pager>,
+        pages: PageIter,
+        visited_right: bool,
+        inner: Option<Box<BTreeIter<I, L>>>,
+        phantom: PhantomData<(I, L)>,
+    },
+}
+
+impl<I, L> Iterator for BTreeIter<I, L>
+where
+    I: InteriorCell,
+    L: Cell,
+{
+    type Item = L;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match *self {
+            BTreeIter::Leaf { ref mut iter, .. } => {
+                iter.next().map(|bytes| L::from_bytes(bytes).unwrap())
+            }
+            BTreeIter::Interior {
+                ref pager,
+                ref mut pages,
+                ref mut inner,
+                ref mut visited_right,
+                ..
+            } => {
+                loop {
+                    match ::std::mem::replace(inner, None) {
+                        Some(mut iter) => {
+                            match iter.next() {
+                                None => {
+                                    *inner = None;
+                                }
+                                o => {
+                                    *inner = Some(iter);
+                                    return o;
+                                }
+                            }
+                        }
+                        None => {
+                            let page_num = match pages.next() {
+                                Some(bytes) => I::from_bytes(bytes).unwrap().left(),
+                                None => {
+                                    if !*visited_right {
+                                        *visited_right = true;
+                                        pages.page.right()
+                                    } else {
+                                        return None;
+                                    }
+                                }
+                            };
+                            *inner = Some(Box::new(
+                                BTree::new(pager.clone(), page_num).unwrap().iter(),
+                            ))
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -296,7 +468,7 @@ impl DbHeader {
 
 
 struct Pager {
-    file: File,
+    file: RefCell<File>,
     header: DbHeader,
 }
 
@@ -311,17 +483,20 @@ impl Pager {
             })?; // XXX String?
         let header = DbHeader::parse(&buffer)?;
 
-        Ok(Pager { file, header })
+        Ok(Pager {
+            file: RefCell::new(file),
+            header,
+        })
     }
 
-    fn get_page(&mut self, number: usize) -> Result<Bytes> {
+    fn get_page(&self, number: usize) -> Result<Bytes> {
         // SQLite counts pages from 1.
         let number = number - 1;
 
-        self.file
-            .seek(SeekFrom::Start((number * self.header.page_size) as u64));
+        let mut file = self.file.borrow_mut();
+        file.seek(SeekFrom::Start((number * self.header.page_size) as u64));
         let mut buffer = vec![0; self.header.page_size];
-        self.file.read_exact(&mut buffer)?;
+        file.read_exact(&mut buffer)?;
         Ok(buffer.into())
     }
 }
@@ -341,7 +516,7 @@ fn dump_table_cell(cell: TableLeafCell) -> Result<()> {
 
 
 fn run() -> Result<()> {
-    let mut pager = Pager::open("aFile.db")?;
+    let mut pager = Rc::new(Pager::open("aFile.db")?);
     println!(
         "Page Size: {}, Reserved Bytes Per Page: {}, Num Pages: {}",
         pager.header.page_size,
@@ -350,7 +525,13 @@ fn run() -> Result<()> {
     );
 
 
-    let page = Page::<TableLeafCell>::new(pager.get_page(1)?, 100)?;
+    let btree = BTree::<TableInteriorCell, TableLeafCell>::new(pager, 3)?;
+    for cell in btree.iter() {
+        dump_table_cell(cell);
+    }
+
+
+    // let page = Page::<TableLeafCell>::new(pager.get_page(1)?, 100)?;
 
     // let mut file = File::open("aFile.db")?;
     // let mut contents = Vec::new();
@@ -369,9 +550,9 @@ fn run() -> Result<()> {
     // println!("Cell content size: {:?}", page.cell_contents().len());
     // println!("Cell content offset: {}", page.cell_content_offset());
 
-    for cell in page.iter() {
-        dump_table_cell(cell);
-    }
+    // for cell in page.iter() {
+    //     dump_table_cell(cell);
+    // }
 
     // for i in 0..(page.len() as usize) {
     //     let cell_offset = BigEndian::read_u16(
