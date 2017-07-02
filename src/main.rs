@@ -113,14 +113,15 @@ enum PageType {
 use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
-struct Page {
+struct Page<C: Cell> {
     page_type: PageType,
     data: Bytes,
     header_offset: usize,
+    phantom: PhantomData<C>,
 }
 
-impl Page {
-    pub fn new(data: Bytes, header_offset: usize) -> Result<Page> {
+impl<C: Cell> Page<C> {
+    pub fn new(data: Bytes, header_offset: usize) -> Result<Page<C>> {
         let page_type = match data[header_offset] {
             // 0x01 => PageType::IndexInterior,
             0x05 => PageType::TableInterior,
@@ -133,6 +134,7 @@ impl Page {
             page_type,
             data,
             header_offset,
+            phantom: PhantomData,
         })
     }
 
@@ -207,25 +209,25 @@ impl Page {
         self.data.slice_from(cell_offset)
     }
 
-    pub fn iter(self) -> PageIter {
+    pub fn iter(self) -> PageIter<C> {
         PageIter { page: self, idx: 0 }
     }
 }
 
 
-struct PageIter {
-    page: Page,
+struct PageIter<C: Cell> {
+    page: Page<C>,
     idx: usize,
 }
 
-impl Iterator for PageIter {
-    type Item = Bytes;
+impl<C: Cell> Iterator for PageIter<C> {
+    type Item = C;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx == self.page.len() {
             None
         } else {
-            let v = self.page.cell(self.idx);
+            let v = C::from_bytes(self.page.cell(self.idx)).unwrap();
             self.idx += 1;
             Some(v)
         }
@@ -300,8 +302,8 @@ where
     I: InteriorCell,
     L: Cell,
 {
-    root: Page,
     pager: Rc<Pager>,
+    page_num: usize,
     phantom: PhantomData<(I, L)>,
 }
 
@@ -311,31 +313,38 @@ where
     L: Cell,
 {
     fn new(pager: Rc<Pager>, page_num: usize) -> Result<BTree<I, L>> {
-        let bytes = pager.get_page(page_num)?;
-        let header_offset = if page_num == 1 { 100 } else { 0 };
-        let root = Page::new(bytes, header_offset)?;
-
         Ok(BTree {
-            root,
+            page_num,
             pager,
             phantom: PhantomData,
         })
     }
 
     fn iter(self) -> BTreeIter<I, L> {
-        match self.root.page_type() {
+        let bytes = self.pager.get_page(self.page_num).unwrap();
+        let header_offset = if self.page_num == 1 { 100 } else { 0 };
+
+        let page_type = match bytes[header_offset] {
+            // 0x01 => PageType::IndexInterior,
+            0x05 => PageType::TableInterior,
+            // 0x0A => PageType::IndexLeaf,
+            0x0D => PageType::TableLeaf,
+            _ => panic!("Unknown B-Tree page type"),
+        };
+
+        match page_type {
             PageType::TableInterior => {
                 BTreeIter::Interior {
                     pager: self.pager,
-                    pages: self.root.iter(),
+                    pages: Page::<I>::new(bytes, header_offset).unwrap().iter(),
                     inner: None,
                     phantom: PhantomData,
                     visited_right: false,
                 }
             }
             PageType::TableLeaf => {
-                BTreeIter::Leaf {
-                    iter: self.root.iter(),
+                BTreeIter::Leaf::<I, L> {
+                    iter: Page::<L>::new(bytes, header_offset).unwrap().iter(),
                     phantom: PhantomData,
                 }
             }
@@ -343,19 +352,6 @@ where
     }
 }
 
-impl<I, L> Clone for BTree<I, L>
-where
-    I: InteriorCell,
-    L: Cell,
-{
-    fn clone(&self) -> Self {
-        BTree {
-            root: self.root.clone(),
-            pager: self.pager.clone(),
-            phantom: PhantomData,
-        }
-    }
-}
 
 enum BTreeIter<I, L>
 where
@@ -363,12 +359,12 @@ where
     L: Cell,
 {
     Leaf {
-        iter: PageIter,
+        iter: PageIter<L>,
         phantom: PhantomData<(I, L)>,
     },
     Interior {
         pager: Rc<Pager>,
-        pages: PageIter,
+        pages: PageIter<I>,
         visited_right: bool,
         inner: Option<Box<BTreeIter<I, L>>>,
         phantom: PhantomData<(I, L)>,
@@ -385,7 +381,7 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         match *self {
             BTreeIter::Leaf { ref mut iter, .. } => {
-                iter.next().map(|bytes| L::from_bytes(bytes).unwrap())
+                iter.next()
             }
             BTreeIter::Interior {
                 ref pager,
@@ -409,7 +405,7 @@ where
                         }
                         None => {
                             let page_num = match pages.next() {
-                                Some(bytes) => I::from_bytes(bytes).unwrap().left(),
+                                Some(cell) => cell.left(),
                                 None => {
                                     if !*visited_right {
                                         *visited_right = true;
