@@ -2,6 +2,12 @@
 name = "rqlite"
 version = "0.1.0"
 authors = ["Michael Killough <michaeljkillough@gmail.com>"]
+description = "Reading (and maybe writing) SQLite files in Rust"
+homepage = "https://github.com/mjkillough/rqlite"
+repository = "https://github.com/mjkillough/rqlite"
+keywords = ["sqlite", "database", "db", "sql"]
+categories = ["database", "database-implementations"]
+license = "MIT"
 
 [dependencies]
 byteorder = "1.0"
