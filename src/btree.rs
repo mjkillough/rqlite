@@ -9,6 +9,11 @@ use errors::*;
 use pager::Pager;
 
 
+// Interior pages have an extra right-pointer.
+const PAGE_INTERIOR_HEADER_LEN: usize = 12;
+const PAGE_LEAF_HEADER_LEN: usize = 8;
+
+
 pub trait Cell: Sized {
     type Key; // TODO: PartialOrd?
 
@@ -33,45 +38,27 @@ enum PageType {
 
 #[derive(Clone, Debug)]
 struct Page<C: Cell> {
-    page_type: PageType,
     data: Bytes,
     header_offset: usize,
+    // It would be nice to have a `header_length()` field that was impl
+    // for specializations of Page<Leaf>/Page<InteriorCell>, so that
+    // we would statically know the header length depending on the type of C.
+    header_length: usize,
     phantom: PhantomData<C>,
 }
 
 impl<C: Cell> Page<C> {
-    pub fn new(data: Bytes, header_offset: usize) -> Result<Page<C>> {
-        let page_type = match data[header_offset] {
-            // 0x01 => PageType::IndexInterior,
-            0x05 => PageType::TableInterior,
-            // 0x0A => PageType::IndexLeaf,
-            0x0D => PageType::TableLeaf,
-            _ => Err("Unknown B-Tree page type")?,
-        };
-
+    pub fn new(data: Bytes, header_offset: usize, header_length: usize) -> Result<Page<C>> {
         Ok(Page {
-            page_type,
             data,
             header_offset,
+            header_length,
             phantom: PhantomData,
         })
     }
 
-    fn header_length(&self) -> usize {
-        match self.page_type() {
-            // PageType::IndexInterior => 12,
-            PageType::TableInterior => 12,
-            // PageType::IndexLeaf => 8,
-            PageType::TableLeaf => 8,
-        }
-    }
-
     fn header(&self) -> &[u8] {
-        &self.data[self.header_offset..self.header_offset + self.header_length()]
-    }
-
-    pub fn page_type(&self) -> PageType {
-        self.page_type
+        &self.data[self.header_offset..self.header_offset + self.header_length]
     }
 
     // "The two-byte integer at offset 1 gives the start of the first freeblock
@@ -102,18 +89,8 @@ impl<C: Cell> Page<C> {
         self.data[7]
     }
 
-    // "The four-byte page number at offset 8 is the right-most pointer. This
-    //  value appears in the header of interior b-tree pages only and is omitted
-    //  from all other pages."
-    fn right(&self) -> usize {
-        if self.header_length() != 12 {
-            unreachable!();
-        }
-        BigEndian::read_u32(&self.header()[8..12]) as usize
-    }
-
     fn cell_pointers(&self) -> &[u8] {
-        let offset = self.header_offset + self.header_length();
+        let offset = self.header_offset + self.header_length;
         let len = self.len() * 2;
         &self.data[offset..offset + len]
     }
@@ -137,6 +114,15 @@ impl<C: Cell> Page<C> {
 struct PageIter<C: Cell> {
     page: Page<C>,
     idx: usize,
+}
+
+impl<I: InteriorCell> PageIter<I> {
+    // "The four-byte page number at offset 8 is the right-most pointer. This
+    //  value appears in the header of interior b-tree pages only and is omitted
+    //  from all other pages."
+    fn right(&self) -> usize {
+        BigEndian::read_u32(&self.page.header()[8..12]) as usize
+    }
 }
 
 impl<C: Cell> Iterator for PageIter<C> {
@@ -229,10 +215,10 @@ where
         let ty = get_page_type(&bytes, header_offset);
         match ty {
             PageType::TableInterior => {
-                self.interiors.push(Some(Page::<I>::new(bytes, header_offset).unwrap().iter()))
+                self.interiors.push(Some(Page::<I>::new(bytes, header_offset, PAGE_INTERIOR_HEADER_LEN).unwrap().iter()))
             },
             PageType::TableLeaf => {
-                self.leaf = Some(Page::<L>::new(bytes, header_offset).unwrap().iter())
+                self.leaf = Some(Page::<L>::new(bytes, header_offset, PAGE_LEAF_HEADER_LEN).unwrap().iter())
             }
         };
     }
@@ -273,7 +259,7 @@ where
                             // None instead to indicate our level in the tree.
                             None => {
                                 self.interiors.push(None);
-                                self.descend(interior.page.right());
+                                self.descend(interior.right());
                             },
                         },
                         // We were previously iterating through the right pointer of an
