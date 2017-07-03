@@ -154,6 +154,17 @@ impl<C: Cell> Iterator for PageIter<C> {
 }
 
 
+fn get_page_type(bytes: &Bytes, header_offset: usize) -> PageType {
+    match bytes[header_offset] {
+        // 0x01 => PageType::IndexInterior,
+        0x05 => PageType::TableInterior,
+        // 0x0A => PageType::IndexLeaf,
+        0x0D => PageType::TableLeaf,
+        _ => panic!("Unknown B-Tree page type"),
+    }
+}
+
+
 // TODO: Consider getting rid of BTree and having just BTreeIter?
 pub struct BTree<I, L>
 where
@@ -179,56 +190,52 @@ where
     }
 
     pub fn iter(self) -> BTreeIter<I, L> {
-        let bytes = self.pager.get_page(self.page_num).unwrap();
-        let header_offset = if self.page_num == 1 { 100 } else { 0 };
-
-        let page_type = match bytes[header_offset] {
-            // 0x01 => PageType::IndexInterior,
-            0x05 => PageType::TableInterior,
-            // 0x0A => PageType::IndexLeaf,
-            0x0D => PageType::TableLeaf,
-            _ => panic!("Unknown B-Tree page type"),
+        let mut iter = BTreeIter {
+            pager: self.pager.clone(),
+            interiors: vec![],
+            leaf: None,
         };
-
-        match page_type {
-            PageType::TableInterior => {
-                let page = Page::<I>::new(bytes, header_offset).unwrap();
-                let right = page.right();
-                BTreeIter::Interior {
-                    pager: self.pager,
-                    pages: page.iter(),
-                    right: Some(right),
-                    inner: None,
-                    phantom: PhantomData,
-                }
-            }
-            PageType::TableLeaf => {
-                BTreeIter::Leaf::<I, L> {
-                    iter: Page::<L>::new(bytes, header_offset).unwrap().iter(),
-                    phantom: PhantomData,
-                }
-            }
-        }
+        iter.descend(self.page_num);
+        iter
     }
 }
 
 
-pub enum BTreeIter<I, L>
+pub enum Comparison {
+    Left,
+    Right,
+    Both,
+}
+
+
+pub struct BTreeIter<I, L>
 where
     I: InteriorCell,
     L: Cell,
 {
-    Leaf {
-        iter: PageIter<L>,
-        phantom: PhantomData<(I, L)>,
-    },
-    Interior {
-        pager: Rc<Pager>,
-        pages: PageIter<I>,
-        right: Option<usize>,
-        inner: Option<Box<BTreeIter<I, L>>>,
-        phantom: PhantomData<(I, L)>,
-    },
+    pager: Rc<Pager>,
+    interiors: Vec<Option<PageIter<I>>>,
+    leaf: Option<PageIter<L>>,
+}
+
+impl<I, L> BTreeIter<I, L>
+where
+    I: InteriorCell,
+    L: Cell,
+{
+    fn descend(&mut self, page_num: usize) {
+        let bytes = self.pager.get_page(page_num).unwrap();
+        let header_offset = if page_num == 1 { 100 } else { 0 };
+        let ty = get_page_type(&bytes, header_offset);
+        match ty {
+            PageType::TableInterior => {
+                self.interiors.push(Some(Page::<I>::new(bytes, header_offset).unwrap().iter()))
+            },
+            PageType::TableLeaf => {
+                self.leaf = Some(Page::<L>::new(bytes, header_offset).unwrap().iter())
+            }
+        };
+    }
 }
 
 impl<I, L> Iterator for BTreeIter<I, L>
@@ -239,43 +246,44 @@ where
     type Item = L;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match *self {
-            BTreeIter::Leaf { ref mut iter, .. } => iter.next(),
-            BTreeIter::Interior {
-                ref pager,
-                ref mut pages,
-                ref mut right,
-                ref mut inner,
-                ..
-            } => {
-                loop {
-                    match mem::replace(inner, None) {
-                        Some(mut iter) => {
-                            match iter.next() {
-                                None => {
-                                    *inner = None;
-                                }
-                                o => {
-                                    *inner = Some(iter);
-                                    return o;
-                                }
-                            }
-                        }
-                        None => {
-                            let page_num = match pages.next() {
-                                Some(cell) => cell.left(),
-                                None => {
-                                    if let Some(page_num) = mem::replace(right, None) {
-                                        page_num
-                                    } else {
-                                        return None;
-                                    }
-                                }
-                            };
-                            *inner = Some(Box::new(
-                                BTree::new(pager.clone(), page_num).unwrap().iter(),
-                            ))
-                        }
+        loop {
+            match mem::replace(&mut self.leaf, None) {
+                Some(mut leaf) => match leaf.next() {
+                    Some(l) => {
+                        // Keep iterating through the leaf until it's exhausted.
+                        self.leaf = Some(leaf);
+                        return Some(l)
+                    },
+                    // We've exhausted this leaf. Loop back round and move
+                    // one left up our interiors stack.
+                    None => {},
+                },
+                None => {
+                    match self.interiors.pop() {
+                        Some(Some(mut interior)) => match interior.next() {
+                            Some(cell) => {
+                                // We're about to iterate down one level from iterator,
+                                // so put it back on our stack of interior pages.
+                                self.interiors.push(Some(interior));
+                                self.descend(cell.left());
+                            },
+                            // There are no more left pointers on this page. We'll iterate down
+                            // one level once more into the page's right pointer. We don't push
+                            // this interior page back onto the stack (it's done), but we push
+                            // None instead to indicate our level in the tree.
+                            None => {
+                                self.interiors.push(None);
+                                self.descend(interior.page.right());
+                            },
+                        },
+                        // We were previously iterating through the right pointer of an
+                        // interior page. Ignore it - we'll loop back round and move up
+                        // two levels of the stack in one go.
+                        Some(None) => {},
+                        // Empty interiors stack means we've reached the root again and
+                        // have iterated down all of its children (left and right).
+                        // We're done!
+                        None => return None,
                     }
                 }
             }
