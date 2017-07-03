@@ -81,6 +81,20 @@ fn run() -> Result<()> {
             break;
         }
 
+        if buffer.starts_with(".count ") {
+            let (_, table_name) = buffer.split_at(7);
+            match schema.table(table_name.trim()) {
+                Ok(table) => {
+                    match table.len() {
+                        Ok(len) => println!("{}", len),
+                        Err(e) => println!("Failed to get size of table {}: {}", table_name, e),
+                    }
+                }
+                Err(e) => println!("Unknown table: {}", table_name),
+            }
+            continue;
+        }
+
         let statement = match nom_sql::parser::parse_query(&buffer) {
             Ok(stmt) => stmt,
             Err(e) => {

@@ -146,6 +146,14 @@ impl Table {
         })
     }
 
+    pub fn len(&self) -> Result<usize> {
+        let btree = TableBTree::new(self.pager.clone(), self.page_num)?;
+        Ok(btree
+            .iter()
+            .collect::<Vec<_>>()
+            .len())
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
