@@ -215,10 +215,18 @@ where
         let ty = get_page_type(&bytes, header_offset);
         match ty {
             PageType::TableInterior => {
-                self.interiors.push(Some(Page::<I>::new(bytes, header_offset, PAGE_INTERIOR_HEADER_LEN).unwrap().iter()))
-            },
+                self.interiors.push(Some(
+                    Page::<I>::new(bytes, header_offset, PAGE_INTERIOR_HEADER_LEN)
+                        .unwrap()
+                        .iter(),
+                ))
+            }
             PageType::TableLeaf => {
-                self.leaf = Some(Page::<L>::new(bytes, header_offset, PAGE_LEAF_HEADER_LEN).unwrap().iter())
+                self.leaf = Some(
+                    Page::<L>::new(bytes, header_offset, PAGE_LEAF_HEADER_LEN)
+                        .unwrap()
+                        .iter(),
+                )
             }
         };
     }
@@ -234,38 +242,42 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match mem::replace(&mut self.leaf, None) {
-                Some(mut leaf) => match leaf.next() {
-                    Some(l) => {
-                        // Keep iterating through the leaf until it's exhausted.
-                        self.leaf = Some(leaf);
-                        return Some(l)
-                    },
-                    // We've exhausted this leaf. Loop back round and move
-                    // one left up our interiors stack.
-                    None => {},
-                },
+                Some(mut leaf) => {
+                    match leaf.next() {
+                        Some(l) => {
+                            // Keep iterating through the leaf until it's exhausted.
+                            self.leaf = Some(leaf);
+                            return Some(l);
+                        }
+                        // We've exhausted this leaf. Loop back round and move
+                        // one left up our interiors stack.
+                        None => {}
+                    }
+                }
                 None => {
                     match self.interiors.pop() {
-                        Some(Some(mut interior)) => match interior.next() {
-                            Some(cell) => {
-                                // We're about to iterate down one level from iterator,
-                                // so put it back on our stack of interior pages.
-                                self.interiors.push(Some(interior));
-                                self.descend(cell.left());
-                            },
-                            // There are no more left pointers on this page. We'll iterate down
-                            // one level once more into the page's right pointer. We don't push
-                            // this interior page back onto the stack (it's done), but we push
-                            // None instead to indicate our level in the tree.
-                            None => {
-                                self.interiors.push(None);
-                                self.descend(interior.right());
-                            },
-                        },
+                        Some(Some(mut interior)) => {
+                            match interior.next() {
+                                Some(cell) => {
+                                    // We're about to iterate down one level from iterator,
+                                    // so put it back on our stack of interior pages.
+                                    self.interiors.push(Some(interior));
+                                    self.descend(cell.left());
+                                }
+                                // There are no more left pointers on this page. We'll iterate down
+                                // one level once more into the page's right pointer. We don't push
+                                // this interior page back onto the stack (it's done), but we push
+                                // None instead to indicate our level in the tree.
+                                None => {
+                                    self.interiors.push(None);
+                                    self.descend(interior.right());
+                                }
+                            }
+                        }
                         // We were previously iterating through the right pointer of an
                         // interior page. Ignore it - we'll loop back round and move up
                         // two levels of the stack in one go.
-                        Some(None) => {},
+                        Some(None) => {}
                         // Empty interiors stack means we've reached the root again and
                         // have iterated down all of its children (left and right).
                         // We're done!
