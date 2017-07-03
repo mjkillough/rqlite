@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::marker::PhantomData;
 use std::mem;
 use std::rc::Rc;
@@ -15,7 +16,7 @@ const PAGE_LEAF_HEADER_LEN: usize = 8;
 
 
 pub trait Cell: Sized {
-    type Key; // TODO: PartialOrd?
+    type Key;
 
     fn from_bytes(Bytes) -> Result<Self>;
     fn key(&self) -> &Self::Key;
@@ -151,23 +152,97 @@ fn get_page_type(bytes: &Bytes, header_offset: usize) -> PageType {
 }
 
 
-// TODO: Consider getting rid of BTree and having just BTreeIter?
-pub struct BTree<I, L>
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum RangeComparison {
+    Less,
+    InRange,
+    UpperBoundary,
+    Greater,
+}
+
+
+pub trait Range {
+    type Key;
+
+    fn compare(&self, key: &Self::Key) -> RangeComparison;
+}
+
+
+#[derive(Copy, Clone, Debug)]
+struct RangeAll<K>(PhantomData<K>);
+
+impl<K> RangeAll<K> {
+    fn new() -> RangeAll<K> {
+        RangeAll(PhantomData)
+    }
+}
+
+impl<K> Range for RangeAll<K> {
+    type Key = K;
+
+    fn compare(&self, key: &Self::Key) -> RangeComparison {
+        RangeComparison::InRange
+    }
+}
+
+
+struct RangeOne<K: Ord>(K);
+
+impl<K: Ord> RangeOne<K> {
+    fn new(key: K) -> RangeOne<K> {
+        RangeOne(key)
+    }
+}
+
+impl<K: Ord> Range for RangeOne<K> {
+    type Key = K;
+
+    fn compare(&self, key: &Self::Key) -> RangeComparison {
+        match key.cmp(&self.0) {
+            Ordering::Less => RangeComparison::Less,
+            Ordering::Equal => RangeComparison::UpperBoundary,
+            Ordering::Greater => RangeComparison::Greater,
+        }
+    }
+}
+
+
+struct RangeGtEq<K: Ord>(K);
+
+impl<K: Ord> RangeGtEq<K> {
+    fn new(key: K) -> RangeGtEq<K> {
+        RangeGtEq(key)
+    }
+}
+
+impl<K: Ord> Range for RangeGtEq<K> {
+    type Key = K;
+
+    fn compare(&self, key: &Self::Key) -> RangeComparison {
+        match key.cmp(&self.0) {
+            Ordering::Less => RangeComparison::Less,
+            Ordering::Equal | Ordering::Greater => RangeComparison::InRange,
+        }
+    }
+}
+
+
+pub struct BTree<K, I, L>
 where
-    I: InteriorCell,
-    L: Cell,
+    I: InteriorCell<Key = K>,
+    L: Cell<Key = K>,
 {
     pager: Rc<Pager>,
     page_num: usize,
     phantom: PhantomData<(I, L)>,
 }
 
-impl<I, L> BTree<I, L>
+impl<K, I, L> BTree<K, I, L>
 where
-    I: InteriorCell,
-    L: Cell,
+    I: InteriorCell<Key = K>,
+    L: Cell<Key = K>,
 {
-    pub fn new(pager: Rc<Pager>, page_num: usize) -> Result<BTree<I, L>> {
+    pub fn new(pager: Rc<Pager>, page_num: usize) -> Result<BTree<K, I, L>> {
         Ok(BTree {
             page_num,
             pager,
@@ -175,39 +250,60 @@ where
         })
     }
 
-    pub fn iter(self) -> BTreeIter<I, L> {
+    pub fn iter_range<R>(self, range: R) -> BTreeIter<K, I, L, R>
+    where
+        R: Range<Key = K>,
+    {
         let mut iter = BTreeIter {
             pager: self.pager.clone(),
             interiors: vec![],
             leaf: None,
+            range,
+            last_comparison: RangeComparison::InRange,
         };
         iter.descend(self.page_num);
         iter
     }
+
+    pub fn iter(self) -> BTreeIter<K, I, L, RangeAll<K>> {
+        self.iter_range(RangeAll::new())
+    }
 }
 
-
-pub enum Comparison {
-    Left,
-    Right,
-    Both,
-}
-
-
-pub struct BTreeIter<I, L>
+impl<K, I, L> BTree<K, I, L>
 where
-    I: InteriorCell,
-    L: Cell,
+    K: Ord,
+    I: InteriorCell<Key = K>,
+    L: Cell<Key = K>,
+{
+    pub fn get(self, key: K) -> Option<L> {
+        let mut iter: Vec<_> = self.iter_range(RangeOne::new(key)).collect();
+        assert!(iter.len() <= 1);
+        iter.pop()
+    }
+}
+
+
+pub struct BTreeIter<K, I, L, R>
+where
+    I: InteriorCell<Key = K>,
+    L: Cell<Key = K>,
+    R: Range<Key = K>,
 {
     pager: Rc<Pager>,
     interiors: Vec<Option<PageIter<I>>>,
     leaf: Option<PageIter<L>>,
+    // We remember the last comparison we did, so that when we're ascending
+    // back up our stack we can decide whether to visit right-pointers.
+    last_comparison: RangeComparison,
+    range: R,
 }
 
-impl<I, L> BTreeIter<I, L>
+impl<K, I, L, R> BTreeIter<K, I, L, R>
 where
-    I: InteriorCell,
-    L: Cell,
+    I: InteriorCell<Key = K>,
+    L: Cell<Key = K>,
+    R: Range<Key = K>,
 {
     fn descend(&mut self, page_num: usize) {
         let bytes = self.pager.get_page(page_num).unwrap();
@@ -230,47 +326,92 @@ where
             }
         };
     }
+
+    fn compare<C: Cell<Key = K>>(&mut self, cell: &C) -> &RangeComparison {
+        self.last_comparison = self.range.compare(cell.key());
+        &self.last_comparison
+    }
 }
 
-impl<I, L> Iterator for BTreeIter<I, L>
+impl<K, I, L, R> Iterator for BTreeIter<K, I, L, R>
 where
-    I: InteriorCell,
-    L: Cell,
+    I: InteriorCell<Key = K>,
+    L: Cell<Key = K>,
+    R: Range<Key = K>,
 {
     type Item = L;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match mem::replace(&mut self.leaf, None) {
+                // We're iterating through the cells in a leaf page.
+                // Attempt to get the next cell and then decide whether to yield it.
                 Some(mut leaf) => {
                     match leaf.next() {
-                        Some(l) => {
-                            // Keep iterating through the leaf until it's exhausted.
-                            self.leaf = Some(leaf);
-                            return Some(l);
+                        Some(cell) => {
+                            match *self.compare(&cell) {
+                                // Silently ignore this value, but continue to  iterate through
+                                // the leaf.
+                                RangeComparison::Less => {
+                                    self.leaf = Some(leaf);
+                                }
+                                // Return this cell and then continue to iterate through this leaf.
+                                RangeComparison::InRange => {
+                                    self.leaf = Some(leaf);
+                                    return Some(cell);
+                                }
+                                // All cells that come after this are going to  be Greater. Don't
+                                // put self.leaf back, so that we start to ascend back up.
+                                _ => {}
+                            }
                         }
                         // We've exhausted this leaf. Loop back round and move
                         // one left up our interiors stack.
                         None => {}
                     }
                 }
+                // We've just finished iterating through the cells in a leaf and
+                // now need to move onto the next leaf.
                 None => {
                     match self.interiors.pop() {
+                        // We were previously iterating through the left-pointer
+                        // of one of the cells in this interior page. See if
+                        // there's another cell to descend into, otherwise
+                        // look at the right-pointer.
                         Some(Some(mut interior)) => {
                             match interior.next() {
+                                // There's another cell in this interior page
+                                // for us to descend into.
                                 Some(cell) => {
-                                    // We're about to iterate down one level from iterator,
-                                    // so put it back on our stack of interior pages.
                                     self.interiors.push(Some(interior));
-                                    self.descend(cell.left());
+
+                                    match *self.compare(&cell) {
+                                        // If the key is Greater than the range, then there's no
+                                        // need to descend into the right-pointer, as all keys are
+                                        // <= the key. Continue to iterate through this interior
+                                        // page, as it may contain bigger keys.
+                                        RangeComparison::Greater => {}
+                                        _ => {
+                                            self.descend(cell.left());
+                                        }
+                                    }
                                 }
-                                // There are no more left pointers on this page. We'll iterate down
-                                // one level once more into the page's right pointer. We don't push
-                                // this interior page back onto the stack (it's done), but we push
-                                // None instead to indicate our level in the tree.
+                                // There are no more left-pointers on this page.
                                 None => {
-                                    self.interiors.push(None);
-                                    self.descend(interior.right());
+                                    match self.last_comparison {
+                                        // If the last comparison was Greater than the range, or on
+                                        // the upper boundary, then we know the right-pointer
+                                        // contains only keys which are Greater. Don't descend.
+                                        RangeComparison::UpperBoundary |
+                                        RangeComparison::Greater => {}
+                                        _ => {
+                                            // We push None so that we can keep track of our  level
+                                            // within the tree. We'll silently move past it when we
+                                            // ascend later.
+                                            self.interiors.push(None);
+                                            self.descend(interior.right());
+                                        }
+                                    }
                                 }
                             }
                         }

@@ -69,6 +69,9 @@ impl TableSchema {
 }
 
 
+type CellKey = u64;
+
+
 #[derive(Debug)]
 pub struct TableLeafCell {
     pub row_id: u64,
@@ -76,7 +79,7 @@ pub struct TableLeafCell {
 }
 
 impl Cell for TableLeafCell {
-    type Key = u64;
+    type Key = CellKey;
 
     fn from_bytes(bytes: Bytes) -> Result<Self> {
         let mut cursor = Cursor::new(bytes);
@@ -101,7 +104,7 @@ pub struct TableInteriorCell {
 }
 
 impl Cell for TableInteriorCell {
-    type Key = u64;
+    type Key = CellKey;
 
     fn from_bytes(bytes: Bytes) -> Result<Self> {
         let left = BigEndian::read_u32(&bytes) as usize;
@@ -121,7 +124,7 @@ impl InteriorCell for TableInteriorCell {
 }
 
 
-type TableBTree = BTree<TableInteriorCell, TableLeafCell>;
+type TableBTree = BTree<CellKey, TableInteriorCell, TableLeafCell>;
 
 
 pub struct Table {
