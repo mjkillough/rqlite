@@ -31,7 +31,8 @@ struct TableSchema {
 
 impl TableSchema {
     fn from_sql(sql: &str) -> Result<TableSchema> {
-        let parsed = nom_sql::parser::parse_query(sql)?;
+        let parsed = nom_sql::parser::parse_query(sql)
+            .map_err(|_| format!("Failed to parse schema: {}", sql))?;
         let column_defs = match parsed {
             SqlQuery::CreateTable(CreateTableStatement { fields, .. }) => fields,
             _ => bail!("Expected CREATE TABLE: {}", sql),

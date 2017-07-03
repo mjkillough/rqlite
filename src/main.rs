@@ -59,6 +59,26 @@ impl SelectOp {
 }
 
 
+fn run_query(schema: &Schema, query: &str) -> Result<()> {
+    let stmt = nom_sql::parser::parse_query(&query)
+        .map_err(|_| format!("Error parsing statement: {}", query))?;
+    match stmt {
+        SqlQuery::Select(select) => {
+            let op = SelectOp::from_stmt(select)
+                .chain_err(|| format!("Error processing statement:"))?;
+            let table = schema.table(op.table)?;
+            let result = table
+                .select(op.columns)
+                .chain_err(|| format!("Error running query:"));
+            println!("{:?}", result)
+        }
+        _ => bail!("Unsupported statement - SELECT only please"),
+    };
+    Ok(())
+}
+
+
+
 fn run() -> Result<()> {
     let mut pager = Rc::new(Pager::open("aFile.db")?);
     println!(
@@ -95,45 +115,9 @@ fn run() -> Result<()> {
             continue;
         }
 
-        let statement = match nom_sql::parser::parse_query(&buffer) {
-            Ok(stmt) => stmt,
-            Err(e) => {
-                println!("Error parsing statement: {}", e);
-                continue;
-            }
-        };
-
-        // XXX Combinators please! (It's late and I'm tired).
-        match statement {
-            SqlQuery::Select(select) => {
-                match SelectOp::from_stmt(select) {
-                    Ok(op) => {
-                        match schema.table(op.table) {
-                            Ok(table) => {
-                                match table.select(op.columns) {
-                                    Ok(result) => println!("{:?}", result),
-                                    Err(e) => {
-                                        println!("Error running query: {}", e);
-                                        continue;
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                println!("Error getting table: {}", e);
-                                continue;
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        println!("Error processing statement: {}", e);
-                        continue;
-                    }
-                }
-            }
-            _ => println!("Unsupported statement - SELECT only please"),
-        };
-
-
+        if let Err(e) = run_query(&schema, &buffer) {
+            println!("Error running query: {}", e)
+        }
     }
 
     Ok(())
