@@ -7,20 +7,29 @@ use std::result;
 
 use bytes::Bytes;
 use byteorder::{ByteOrder, BigEndian};
-use nom_sql::{self, SqlQuery, SqlType, CreateTableStatement, SelectStatement, FieldExpression};
+use nom_sql::{self, SqlQuery, SqlType, ColumnConstraint, CreateTableStatement, SelectStatement,
+              FieldExpression};
 
 use btree::{Cell, InteriorCell, BTree};
 use errors::*;
 use pager::Pager;
 use util::read_varint;
-use record::{parse_record, Field};
+use record::{parse_record, Field, FieldValue};
 use types::Type;
+
+
+#[derive(Debug)]
+enum ColumnReference {
+    RowId,
+    Index(usize),
+}
 
 
 #[derive(Debug)]
 struct Column {
     name: String,
     ty: Type,
+    primary_key: bool,
 }
 
 
@@ -46,9 +55,11 @@ impl TableSchema {
                     SqlType::Text => Type::Text,
                     other => bail!("Unexpected column type: {:?}", other),
                 };
+                let primary_key = col.constraints.contains(&ColumnConstraint::PrimaryKey);
                 Ok(Column {
                     name: col.column.name,
                     ty,
+                    primary_key,
                 })
             })
             .collect();
@@ -56,14 +67,25 @@ impl TableSchema {
         Ok(TableSchema { columns: columns? })
     }
 
-    fn column_indices<S: AsRef<str>>(&self, names: &[S]) -> Result<Vec<usize>> {
+    fn column_indices<S: AsRef<str>>(&self, names: &[S]) -> Result<Vec<ColumnReference>> {
+        // If the primary key is a single integer column, then it is
+        // actually stored as the RowId and a null is stored in its place
+        // in the fields.
+        let pks = self.columns
+            .iter()
+            .filter(|c| c.primary_key)
+            .collect::<Vec<_>>();
+        let pk_is_rowid = pks.len() == 1 && pks[0].ty == Type::Integer;
         names
             .iter()
-            .map(|name| {
-                self.columns
+            .map(|name| if pk_is_rowid && pks[0].name == name.as_ref() {
+                Ok(ColumnReference::RowId)
+            } else {
+                let idx = self.columns
                     .iter()
                     .position(|col| col.name == name.as_ref())
-                    .ok_or(format!("Unknown column: {}", name.as_ref()).into())
+                    .ok_or(format!("Unknown column: {}", name.as_ref()))?;
+                Ok(ColumnReference::Index(idx))
             })
             .collect()
     }
@@ -159,20 +181,27 @@ impl Table {
         &self.name
     }
 
-    pub fn select<S: Into<String>>(&self, columns: Vec<S>) -> Result<Vec<HashMap<String, Field>>> {
+    pub fn select<S: Into<String>>(
+        &self,
+        columns: Vec<S>,
+    ) -> Result<Vec<HashMap<String, FieldValue>>> {
         let columns: Vec<String> = columns.into_iter().map(|s| s.into()).collect();
-        let indices = self.schema.column_indices(&columns)?;
+        let colrefs = self.schema.column_indices(&columns)?;
 
         let btree = TableBTree::new(self.pager.clone(), self.page_num)?;
         let results = btree
             .iter()
             .map(|row| {
-                row.fields
-                    .into_iter()
-                    .enumerate()
-                    .filter(|&(i, _)| indices.contains(&i))
-                    .zip(columns.clone())
-                    .map(|((i, field), name)| (name, field))
+                columns
+                    .iter()
+                    .zip(colrefs.iter())
+                    .map(|(name, colref)| {
+                        let value = match *colref {
+                            ColumnReference::RowId => FieldValue::Integer(*row.key() as u64),
+                            ColumnReference::Index(idx) => row.fields[idx].value(),
+                        };
+                        (name.clone(), value)
+                    })
                     .collect()
             })
             .collect();

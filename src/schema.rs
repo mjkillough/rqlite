@@ -37,13 +37,13 @@ impl Schema {
             .select(vec!["type", "tbl_name", "rootpage", "sql"])?
             .iter()
             .filter(|table| {
-                table["type"].value().text().unwrap_or(&[]) == "table".as_bytes()
+                table["type"].text().unwrap_or(&[]) == "table".as_bytes()
             })
             .map(|table| {
-                let page_num = table["rootpage"].value().integer()? as usize;
+                let page_num = table["rootpage"].integer()? as usize;
                 // XXX Not necessarily UTF-8!
-                let name = String::from_utf8(table["tbl_name"].value().text()?.to_vec())?;
-                let sql = String::from_utf8(table["sql"].value().text()?.to_vec())?;
+                let name = String::from_utf8(table["tbl_name"].text()?.to_vec())?;
+                let sql = String::from_utf8(table["sql"].text()?.to_vec())?;
                 Table::new(self.pager.clone(), page_num, name, &sql)
             })
             .collect()
