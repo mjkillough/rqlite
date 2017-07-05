@@ -81,7 +81,11 @@ impl<C: Cell> Page<C> {
     //  content area. A zero value for this integer is interpreted as 65536."
     fn cell_content_offset(&self) -> usize {
         let start = BigEndian::read_u16(&self.header()[5..7]);
-        if start == 0 { 65536 } else { start as usize }
+        if start == 0 {
+            65536
+        } else {
+            start as usize
+        }
     }
 
     // "The one-byte integer at offset 7 gives the number of fragmented free
