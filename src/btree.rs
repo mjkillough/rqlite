@@ -30,10 +30,8 @@ pub trait InteriorCell: Cell {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum PageType {
-    // IndexInterior,
-    TableInterior,
-    // IndexLeaf,
-    TableLeaf,
+    Interior,
+    Leaf,
 }
 
 
@@ -146,12 +144,10 @@ impl<C: Cell> Iterator for PageIter<C> {
 
 
 fn get_page_type(bytes: &Bytes, header_offset: usize) -> PageType {
-    match bytes[header_offset] {
-        // 0x01 => PageType::IndexInterior,
-        0x05 => PageType::TableInterior,
-        // 0x0A => PageType::IndexLeaf,
-        0x0D => PageType::TableLeaf,
-        _ => panic!("Unknown B-Tree page type"),
+    if bytes[header_offset] & 0x8 == 0x8 {
+        PageType::Leaf
+    } else {
+        PageType::Interior
     }
 }
 
@@ -314,14 +310,14 @@ where
         let header_offset = if page_num == 1 { 100 } else { 0 };
         let ty = get_page_type(&bytes, header_offset);
         match ty {
-            PageType::TableInterior => {
+            PageType::Interior => {
                 self.interiors.push(Some(
                     Page::<I>::new(bytes, header_offset, PAGE_INTERIOR_HEADER_LEN)
                         .unwrap()
                         .iter(),
                 ))
             }
-            PageType::TableLeaf => {
+            PageType::Leaf => {
                 self.leaf = Some(
                     Page::<L>::new(bytes, header_offset, PAGE_LEAF_HEADER_LEN)
                         .unwrap()
