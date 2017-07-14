@@ -7,6 +7,7 @@ extern crate nom_sql;
 mod btree;
 mod db;
 mod errors;
+mod index;
 mod pager;
 mod record;
 mod schema;
@@ -90,6 +91,13 @@ fn run() -> Result<()> {
 
     let schema = Schema::new(pager)?;
     println!("Tables: {:#?}", schema.tables()?);
+    let indices = schema.indices()?;
+    for index in indices {
+        println!("{:?}", index);
+        for row in index.dump()? {
+            println!("\t{:?}", row);
+        }
+    }
 
     loop {
         print!("> ");

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use errors::*;
+use index::Index;
 use pager::Pager;
 use table::Table;
 
@@ -30,6 +31,25 @@ impl Schema {
             pager,
             schema_table,
         })
+    }
+
+    pub fn indices(&self) -> Result<Vec<Index>> {
+        self.schema_table
+            .select(vec!["type", "name", "tbl_name", "rootpage", "sql"])?
+            .iter()
+            .filter(|row| {
+                row["type"].text().unwrap_or(&[]) == "index".as_bytes()
+            })
+            .map(|row| {
+                Index::new(
+                    self.pager.clone(),
+                    row["rootpage"].integer()? as usize,
+                    // XXX Assuming UTF-8
+                    String::from_utf8(row["tbl_name"].text()?.to_vec())?,
+                    String::from_utf8(row["name"].text()?.to_vec())?,
+                )
+            })
+            .collect()
     }
 
     pub fn tables(&self) -> Result<Vec<Table>> {
