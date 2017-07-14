@@ -130,6 +130,7 @@ impl Cell for TableInteriorCell {
     type Key = CellKey;
 
     fn from_bytes(bytes: Bytes) -> Result<Self> {
+        // XXX Are we reading the same bytes as left and row_id?
         let left = BigEndian::read_u32(&bytes) as usize;
         let row_id = read_varint(&mut Cursor::new(bytes))?;
         Ok(TableInteriorCell { row_id, left })
