@@ -37,16 +37,13 @@ impl Schema {
         self.schema_table
             .select(vec!["type", "name", "tbl_name", "rootpage", "sql"])?
             .iter()
-            .filter(|row| {
-                row["type"].text().unwrap_or(&[]) == "index".as_bytes()
-            })
+            .filter(|row| row["type"].as_text().unwrap_or("") == "index")
             .map(|row| {
                 Index::new(
                     self.pager.clone(),
-                    row["rootpage"].integer()? as usize,
-                    // XXX Assuming UTF-8
-                    String::from_utf8(row["tbl_name"].text()?.to_vec())?,
-                    String::from_utf8(row["name"].text()?.to_vec())?,
+                    row["rootpage"].as_integer()? as usize,
+                    row["tbl_name"].as_text()?,
+                    row["name"].as_text()?,
                 )
             })
             .collect()
@@ -56,14 +53,11 @@ impl Schema {
         self.schema_table
             .select(vec!["type", "tbl_name", "rootpage", "sql"])?
             .iter()
-            .filter(|table| {
-                table["type"].text().unwrap_or(&[]) == "table".as_bytes()
-            })
+            .filter(|table| table["type"].as_text().unwrap_or("") == "table")
             .map(|table| {
-                let page_num = table["rootpage"].integer()? as usize;
-                // XXX Not necessarily UTF-8!
-                let name = String::from_utf8(table["tbl_name"].text()?.to_vec())?;
-                let sql = String::from_utf8(table["sql"].text()?.to_vec())?;
+                let page_num = table["rootpage"].as_integer()? as usize;
+                let name = table["tbl_name"].as_text()?;
+                let sql = table["sql"].as_text()?;
                 Table::new(self.pager.clone(), page_num, name, &sql)
             })
             .collect()

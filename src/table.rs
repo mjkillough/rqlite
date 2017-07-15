@@ -14,7 +14,7 @@ use btree::{Cell, InteriorCell, BTree};
 use errors::*;
 use pager::Pager;
 use util::read_varint;
-use record::{parse_record, Field, FieldValue};
+use record::{Field, Record};
 use types::Type;
 
 
@@ -98,7 +98,7 @@ type CellKey = u64;
 #[derive(Debug)]
 pub struct TableLeafCell {
     pub row_id: u64,
-    pub fields: Vec<Field>,
+    pub record: Record,
 }
 
 impl Cell for TableLeafCell {
@@ -109,9 +109,10 @@ impl Cell for TableLeafCell {
         let payload_length = read_varint(&mut cursor)?;
         let row_id = read_varint(&mut cursor)?;
         let position = cursor.position() as usize;
-        let fields = parse_record(cursor.into_inner().slice_from(position))?;
+        let bytes = cursor.into_inner().slice_from(position);
+        let record = Record::from_bytes(bytes)?;
 
-        Ok(TableLeafCell { row_id, fields })
+        Ok(TableLeafCell { row_id, record })
     }
 
     fn key(&self) -> &Self::Key {
@@ -182,10 +183,7 @@ impl Table {
         &self.name
     }
 
-    pub fn select<S: Into<String>>(
-        &self,
-        columns: Vec<S>,
-    ) -> Result<Vec<HashMap<String, FieldValue>>> {
+    pub fn select<S: Into<String>>(&self, columns: Vec<S>) -> Result<Vec<HashMap<String, Field>>> {
         let columns: Vec<String> = columns.into_iter().map(|s| s.into()).collect();
         let colrefs = self.schema.column_indices(&columns)?;
 
@@ -198,8 +196,8 @@ impl Table {
                     .zip(colrefs.iter())
                     .map(|(name, colref)| {
                         let value = match *colref {
-                            ColumnReference::RowId => FieldValue::Integer(*row.key() as u64),
-                            ColumnReference::Index(idx) => row.fields[idx].value(),
+                            ColumnReference::RowId => Field::from(*row.key()),
+                            ColumnReference::Index(idx) => row.record[idx].clone(), // XXX rethink
                         };
                         (name.clone(), value)
                     })

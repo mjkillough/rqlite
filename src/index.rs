@@ -10,32 +10,30 @@ use btree::{Cell, InteriorCell, BTree};
 use errors::*;
 use pager::Pager;
 use util::read_varint;
-use record::{parse_record, Field};
-
-
-type IndexKey = Vec<Field>;
+use record::Record;
 
 
 #[derive(Debug)]
 struct IndexLeafCell {
-    fields: IndexKey,
+    record: Record,
 }
 
 impl Cell for IndexLeafCell {
-    type Key = IndexKey;
+    type Key = Record;
 
     fn from_bytes(bytes: Bytes) -> Result<Self> {
         let mut cursor = Cursor::new(bytes);
         // XXX See questions about len in IndexInteriorCell.
         let len = read_varint(&mut cursor)? as usize;
         let position = cursor.position() as usize;
-        let fields = parse_record(cursor.into_inner().slice(position, position + len))?;
+        let bytes = cursor.into_inner().slice(position, position + len);
+        let record = Record::from_bytes(bytes)?;
 
-        Ok(IndexLeafCell { fields })
+        Ok(IndexLeafCell { record })
     }
 
     fn key(&self) -> &Self::Key {
-        &self.fields
+        &self.record
     }
 }
 
@@ -43,11 +41,11 @@ impl Cell for IndexLeafCell {
 #[derive(Debug)]
 struct IndexInteriorCell {
     left: usize,
-    fields: IndexKey,
+    record: Record,
 }
 
 impl Cell for IndexInteriorCell {
-    type Key = IndexKey;
+    type Key = Record;
 
     fn from_bytes(bytes: Bytes) -> Result<Self> {
         let left = BigEndian::read_u32(&bytes) as usize;
@@ -58,13 +56,14 @@ impl Cell for IndexInteriorCell {
         //     something to do with the overflow which we're ignoring.
         let len = read_varint(&mut cursor)? as usize;
         let position = cursor.position() as usize;
-        let fields = parse_record(cursor.into_inner().slice(position, position + len))?;
+        let bytes = cursor.into_inner().slice(position, position + len);
+        let record = Record::from_bytes(bytes)?;
 
-        Ok(IndexInteriorCell { left, fields })
+        Ok(IndexInteriorCell { left, record })
     }
 
     fn key(&self) -> &Self::Key {
-        &self.fields
+        &self.record
     }
 }
 
@@ -75,7 +74,7 @@ impl InteriorCell for IndexInteriorCell {
 }
 
 
-type IndexBTree = BTree<IndexKey, IndexInteriorCell, IndexLeafCell>;
+type IndexBTree = BTree<Record, IndexInteriorCell, IndexLeafCell>;
 
 
 pub struct Index {
@@ -102,9 +101,9 @@ impl Index {
         })
     }
 
-    pub fn dump(&self) -> Result<Vec<Vec<Field>>> {
+    pub fn dump(&self) -> Result<Vec<Record>> {
         let btree = IndexBTree::new(self.pager.clone(), self.page_num)?;
-        Ok(btree.iter().map(|cell| cell.fields).collect())
+        Ok(btree.iter().map(|cell| cell.record).collect())
     }
 }
 
