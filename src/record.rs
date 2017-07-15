@@ -1,8 +1,10 @@
+use std::cmp::{Ordering, PartialOrd};
 use std::fmt;
 use std::io::Cursor;
 use std::io::prelude::*;
 use std::ops::Index;
 use std::result;
+use std::slice;
 use std::str;
 
 use std::string::ToString;
@@ -161,10 +163,58 @@ impl Field {
     }
 }
 
-// TODO: If this Field::from() API is useful, implement it for the other types too.
-impl<I: Into<u64>> From<I> for Field {
-    fn from(value: I) -> Field {
-        Field::Literal(LiteralValue::Integer(value.into()))
+impl From<u64> for Field {
+    fn from(value: u64) -> Field {
+        Field::Literal(LiteralValue::Integer(value))
+    }
+}
+
+impl<'a> From<&'a str> for Field {
+    fn from(value: &str) -> Field {
+        Field::Literal(LiteralValue::Str(value.to_owned()))
+    }
+}
+
+// TODO: Implement the proper affinity rules for types.
+impl PartialEq for Field {
+    fn eq(&self, other: &Field) -> bool {
+        let result = match self.ty() {
+            Type::Null => other.as_null().map(|_| true),
+            Type::Integer => other.as_integer().map(|o| self.as_integer().unwrap() == o),
+            Type::Float => other.as_float().map(|o| self.as_float().unwrap() == o),
+            Type::Blob => other.as_blob().map(|o| self.as_blob().unwrap() == o),
+            Type::Text => other.as_text().map(|o| self.as_text().unwrap() == o),
+        };
+        result.expect("Unimplemented: proper affinity types in Field comparisons")
+    }
+}
+
+impl PartialOrd for Field {
+    fn partial_cmp(&self, other: &Field) -> Option<Ordering> {
+        let result = match self.ty() {
+            Type::Null => other.as_null().map(|_| Some(Ordering::Equal)),
+            Type::Integer => {
+                other
+                    .as_integer()
+                    .map(|o| self.as_integer().unwrap().partial_cmp(&o))
+            }
+            Type::Float => {
+                other
+                    .as_float()
+                    .map(|o| self.as_float().unwrap().partial_cmp(&o))
+            }
+            Type::Blob => {
+                other
+                    .as_blob()
+                    .map(|o| self.as_blob().unwrap().partial_cmp(o))
+            }
+            Type::Text => {
+                other
+                    .as_text()
+                    .map(|o| self.as_text().unwrap().partial_cmp(o))
+            }
+        };
+        result.expect("Unimplemented: proper affinity types in Field comparisons")
     }
 }
 
@@ -200,6 +250,10 @@ pub struct Record {
 }
 
 impl Record {
+    pub fn new(fields: Vec<Field>) -> Record {
+        Record { fields }
+    }
+
     pub fn from_bytes(bytes: Bytes) -> Result<Record> {
         let mut cursor = Cursor::new(bytes);
         let header_size = read_varint(&mut cursor)?;
@@ -239,6 +293,14 @@ impl Record {
             .collect();
 
         Ok(Record { fields })
+    }
+
+    pub fn len(&self) -> usize {
+        self.fields.len()
+    }
+
+    pub fn iter(&self) -> slice::Iter<Field> {
+        self.fields.iter()
     }
 }
 

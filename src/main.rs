@@ -22,7 +22,7 @@ use std::rc::Rc;
 use btree::BTree;
 use errors::*;
 use pager::Pager;
-use record::Field;
+use record::{Field, Record};
 use schema::Schema;
 use table::Table;
 
@@ -92,10 +92,17 @@ fn run() -> Result<()> {
     let schema = Schema::new(pager)?;
     println!("Tables: {:#?}", schema.tables()?);
     let indices = schema.indices()?;
-    for index in indices {
+    for (i, index) in indices.iter().enumerate() {
         println!("{:?}", index);
         for row in index.dump()? {
-            println!("\t{:?}", row);
+            println!("  > {:?}", row);
+        }
+        if i == 1 {
+            println!("Scanning:");
+            let record = Record::new(vec![Field::from("value1")]);
+            for row in index.scan(record)? {
+                println!("  > {:?}", row)
+            }
         }
     }
 

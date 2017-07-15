@@ -1,3 +1,4 @@
+use std::cmp::{Ordering, PartialOrd};
 use std::fmt;
 use std::io::Cursor;
 use std::rc::Rc;
@@ -6,7 +7,7 @@ use std::result;
 use bytes::Bytes;
 use byteorder::{ByteOrder, BigEndian};
 
-use btree::{Cell, InteriorCell, BTree};
+use btree::{Cell, InteriorCell, BTree, Range, RangeComparison};
 use errors::*;
 use pager::Pager;
 use util::read_varint;
@@ -74,6 +75,40 @@ impl InteriorCell for IndexInteriorCell {
 }
 
 
+struct IndexRange(Record);
+
+impl IndexRange {
+    fn new(record: Record) -> IndexRange {
+        IndexRange(record)
+    }
+}
+
+impl Range for IndexRange {
+    type Key = Record;
+
+    fn compare(&self, other: &Self::Key) -> RangeComparison {
+        if self.0.len() > other.len() {
+            panic!(
+                "Attempted to compare records with mis-matched sizes: {:?} {:?}",
+                self.0,
+                other
+            );
+        }
+        for (this, that) in self.0.iter().zip(other.iter()) {
+            let ord = that.partial_cmp(this).unwrap();
+            match ord {
+                // If Equal, move onto comparing next field.
+                Ordering::Equal => {}
+                Ordering::Less => return RangeComparison::Less,
+                Ordering::Greater => return RangeComparison::Greater,
+            }
+        }
+        // If we got this far, it must be equal.
+        RangeComparison::InRange
+    }
+}
+
+
 type IndexBTree = BTree<Record, IndexInteriorCell, IndexLeafCell>;
 
 
@@ -104,6 +139,16 @@ impl Index {
     pub fn dump(&self) -> Result<Vec<Record>> {
         let btree = IndexBTree::new(self.pager.clone(), self.page_num)?;
         Ok(btree.iter().map(|cell| cell.record).collect())
+    }
+
+    pub fn scan(&self, record: Record) -> Result<Vec<Record>> {
+        let btree = IndexBTree::new(self.pager.clone(), self.page_num)?;
+        Ok(
+            btree
+                .iter_range(IndexRange::new(record))
+                .map(|cell| cell.record)
+                .collect(),
+        )
     }
 }
 
