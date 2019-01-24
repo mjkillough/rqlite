@@ -17,3 +17,7 @@ error-chain = "0.12"
 
 [dependencies.nom_sql]
 path = "./nom-sql"
+
+[dev-dependencies]
+sqlite = "0.24"
+tempfile = "3"

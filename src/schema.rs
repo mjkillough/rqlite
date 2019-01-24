@@ -68,3 +68,40 @@ impl Schema {
             .ok_or(ErrorKind::TableDoesNotExist(name.as_ref().to_owned()).into())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+    use std::rc::Rc;
+
+    use tempfile::NamedTempFile;
+
+    use super::*;
+    use crate::{Pager, Result};
+
+    fn sqlite_database(statements: &[&str]) -> Result<NamedTempFile> {
+        let file = NamedTempFile::new()?;
+        let db = sqlite::open(file.path())?;
+        for statement in statements {
+            db.execute(statement)?;
+        }
+        Ok(file)
+    }
+
+    fn open(path: impl AsRef<Path>) -> Result<Rc<Pager>> {
+        let pager = Rc::new(Pager::open("aFile.db")?);
+        Ok(pager)
+    }
+
+    #[test]
+    fn test() -> Result<()> {
+        let file = sqlite_database(&[
+            "CREATE TABLE table1 (field1 TEXT, field2 INTEGER)",
+            "CREATE TABLE table2 (field2 INTEGER)",
+        ])?;
+        let pager = open(file.path())?;
+        let schema = Schema::new(pager)?;
+
+        Ok(())
+    }
+}

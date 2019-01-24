@@ -17,10 +17,11 @@ error_chain! {
         InvalidVarint
     }
 
-
     foreign_links {
-        StrUtf8(::std::str::Utf8Error);
-        FromUtf8(::std::string::FromUtf8Error);
-        Io(::std::io::Error);
+        StrUtf8(std::str::Utf8Error);
+        FromUtf8(std::string::FromUtf8Error);
+        Io(std::io::Error);
+
+        Sqlite(sqlite::Error) #[cfg(test)];
     }
 }
