@@ -1,8 +1,5 @@
-
-
 #[macro_use]
 extern crate error_chain;
-use nom_sql;
 
 mod btree;
 mod db;
@@ -15,18 +12,15 @@ mod table;
 mod types;
 mod util;
 
-use std::fmt::Display;
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::rc::Rc;
 
-use crate::btree::BTree;
 use crate::errors::*;
 use crate::pager::Pager;
 use crate::record::{Field, Record};
 use crate::schema::Schema;
-use crate::table::Table;
 
-use nom_sql::{CreateTableStatement, FieldExpression, SelectStatement, SqlQuery, SqlType};
+use nom_sql::{FieldExpression, SelectStatement, SqlQuery};
 
 #[derive(Debug)]
 struct SelectOp {
@@ -76,7 +70,7 @@ fn run_query(schema: &Schema, query: &str) -> Result<()> {
     Ok(())
 }
 
-fn run() -> Result<()> {
+fn main() -> Result<()> {
     let pager = Rc::new(Pager::open("aFile.db")?);
     println!(
         "Page Size: {}, Reserved Bytes Per Page: {}, Num Pages: {}",
@@ -102,7 +96,7 @@ fn run() -> Result<()> {
 
     loop {
         print!("> ");
-        io::stdout().flush();
+        io::stdout().flush()?;
         let mut buffer = String::new();
         io::stdin().read_line(&mut buffer)?;
 
@@ -129,5 +123,3 @@ fn run() -> Result<()> {
 
     Ok(())
 }
-
-quick_main!(run);

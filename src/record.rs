@@ -1,13 +1,10 @@
 use std::cmp::{Ordering, PartialOrd};
 use std::fmt;
-use std::io::prelude::*;
 use std::io::Cursor;
 use std::ops::Index;
 use std::result;
 use std::slice;
 use std::str;
-
-use std::string::ToString;
 
 use byteorder::{BigEndian, ByteOrder};
 use bytes::Bytes;

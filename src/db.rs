@@ -12,11 +12,11 @@ impl DbHeader {
     pub fn parse(data: &[u8]) -> Result<DbHeader> {
         use crate::ErrorKind::InvalidDbHeader;
 
-        const s: &'static str = "SQLite format 3\0";
-        if data.len() < s.len() || &data[..s.len()] != s.as_bytes() {
+        const HEADER: &'static str = "SQLite format 3\0";
+        if data.len() < HEADER.len() || &data[..HEADER.len()] != HEADER.as_bytes() {
             bail!(InvalidDbHeader(format!(
                 "Invalid header string: {:?}",
-                &data[..s.len()]
+                &data[..HEADER.len()]
             ),));
         }
 

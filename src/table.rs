@@ -1,16 +1,12 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::hash::Hash;
 use std::io::Cursor;
 use std::rc::Rc;
 use std::result;
 
 use byteorder::{BigEndian, ByteOrder};
 use bytes::Bytes;
-use nom_sql::{
-    self, ColumnConstraint, CreateTableStatement, FieldExpression, SelectStatement, SqlQuery,
-    SqlType,
-};
+use nom_sql::{self, ColumnConstraint, CreateTableStatement, SqlQuery, SqlType};
 
 use crate::btree::{BTree, Cell, InteriorCell};
 use crate::errors::*;

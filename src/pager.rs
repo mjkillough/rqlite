@@ -34,7 +34,7 @@ impl Pager {
         let number = number - 1;
 
         let mut file = self.file.borrow_mut();
-        file.seek(SeekFrom::Start((number * self.header.page_size) as u64));
+        file.seek(SeekFrom::Start((number * self.header.page_size) as u64))?;
         let mut buffer = vec![0; self.header.page_size];
         file.read_exact(&mut buffer)?;
         Ok(buffer.into())
