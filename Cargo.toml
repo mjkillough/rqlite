@@ -8,6 +8,7 @@ repository = "https://github.com/mjkillough/rqlite"
 keywords = ["sqlite", "database", "db", "sql"]
 categories = ["database", "database-implementations"]
 license = "MIT"
+edition = "2018"
 
 [dependencies]
 byteorder = "1.0"
