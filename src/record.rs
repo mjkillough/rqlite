@@ -55,7 +55,7 @@ impl FieldType {
 
 
 #[derive(Clone, Debug)]
-enum LiteralValue {
+pub enum LiteralValue {
     Null,
     Integer(u64),
     Float(f64),
@@ -64,7 +64,7 @@ enum LiteralValue {
 }
 
 #[derive(Clone, Debug)]
-enum LazyValue {
+pub enum LazyValue {
     Blob(Bytes),
     Str(Bytes),
 }

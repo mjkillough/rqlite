@@ -169,7 +169,7 @@ pub trait Range {
 
 
 #[derive(Copy, Clone, Debug)]
-struct RangeAll<K>(PhantomData<K>);
+pub struct RangeAll<K>(PhantomData<K>);
 
 impl<K> RangeAll<K> {
     fn new() -> RangeAll<K> {
@@ -185,8 +185,7 @@ impl<K> Range for RangeAll<K> {
     }
 }
 
-
-struct RangeOne<K: Ord>(K);
+pub struct RangeOne<K: Ord>(K);
 
 impl<K: Ord> RangeOne<K> {
     fn new(key: K) -> RangeOne<K> {
@@ -206,8 +205,7 @@ impl<K: Ord> Range for RangeOne<K> {
     }
 }
 
-
-struct RangeGtEq<K: Ord>(K);
+pub struct RangeGtEq<K: Ord>(K);
 
 impl<K: Ord> RangeGtEq<K> {
     fn new(key: K) -> RangeGtEq<K> {
