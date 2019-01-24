@@ -12,12 +12,12 @@ use nom_sql::{
     SqlType,
 };
 
-use btree::{BTree, Cell, InteriorCell};
-use errors::*;
-use pager::Pager;
-use record::{Field, Record};
-use types::Type;
-use util::read_varint;
+use crate::btree::{BTree, Cell, InteriorCell};
+use crate::errors::*;
+use crate::pager::Pager;
+use crate::record::{Field, Record};
+use crate::types::Type;
+use crate::util::read_varint;
 
 #[derive(Debug)]
 enum ColumnReference {
@@ -107,7 +107,7 @@ impl Cell for TableLeafCell {
 
     fn from_bytes(bytes: Bytes) -> Result<Self> {
         let mut cursor = Cursor::new(bytes);
-        let payload_length = read_varint(&mut cursor)?;
+        let _payload_length = read_varint(&mut cursor)?;
         let row_id = read_varint(&mut cursor)?;
         let position = cursor.position() as usize;
         let bytes = cursor.into_inner().slice_from(position);

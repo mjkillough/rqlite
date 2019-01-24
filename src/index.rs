@@ -7,11 +7,11 @@ use std::result;
 use byteorder::{BigEndian, ByteOrder};
 use bytes::Bytes;
 
-use btree::{BTree, Cell, InteriorCell, Range, RangeComparison};
-use errors::*;
-use pager::Pager;
-use record::Record;
-use util::read_varint;
+use crate::btree::{BTree, Cell, InteriorCell, Range, RangeComparison};
+use crate::errors::*;
+use crate::pager::Pager;
+use crate::record::Record;
+use crate::util::read_varint;
 
 #[derive(Debug)]
 struct IndexLeafCell {

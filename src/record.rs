@@ -12,9 +12,9 @@ use std::string::ToString;
 use byteorder::{BigEndian, ByteOrder};
 use bytes::Bytes;
 
-use errors::*;
-use types::Type;
-use util::read_varint;
+use crate::errors::*;
+use crate::types::Type;
+use crate::util::read_varint;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum FieldType {

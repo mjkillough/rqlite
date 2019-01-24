@@ -1,6 +1,6 @@
 use std::io::prelude::*;
 
-use errors::*;
+use crate::errors::*;
 
 /// Read's a 64-bit variable length integer.
 ///
@@ -26,7 +26,7 @@ pub fn read_varint<R: Read>(mut data: R) -> Result<u64> {
     // use all 8 bits from it.
     let mut value: u64 = 0;
     let mut seen_last_byte = false;
-    for i in 0..8 {
+    for _i in 0..8 {
         let mut buffer = [0];
         data.read_exact(&mut buffer)
             .chain_err(|| ErrorKind::InvalidVarint)?;

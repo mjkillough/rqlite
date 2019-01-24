@@ -1,6 +1,6 @@
 use byteorder::{BigEndian, ByteOrder};
 
-use errors::*;
+use crate::errors::*;
 
 pub struct DbHeader {
     pub page_size: usize,
@@ -10,7 +10,7 @@ pub struct DbHeader {
 
 impl DbHeader {
     pub fn parse(data: &[u8]) -> Result<DbHeader> {
-        use ErrorKind::InvalidDbHeader;
+        use crate::ErrorKind::InvalidDbHeader;
 
         const s: &'static str = "SQLite format 3\0";
         if data.len() < s.len() || &data[..s.len()] != s.as_bytes() {

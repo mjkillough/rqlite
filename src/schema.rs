@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use errors::*;
-use index::Index;
-use pager::Pager;
-use table::Table;
+use crate::errors::*;
+use crate::index::Index;
+use crate::pager::Pager;
+use crate::table::Table;
 
 const SQLITE_MASTER_SCHEMA: &'static str = "
     CREATE TABLE sqlite_master(

@@ -6,8 +6,8 @@ use std::rc::Rc;
 use byteorder::{BigEndian, ByteOrder};
 use bytes::Bytes;
 
-use errors::*;
-use pager::Pager;
+use crate::errors::*;
+use crate::pager::Pager;
 
 // Interior pages have an extra right-pointer.
 const PAGE_INTERIOR_HEADER_LEN: usize = 12;
@@ -16,7 +16,7 @@ const PAGE_LEAF_HEADER_LEN: usize = 8;
 pub trait Cell: Sized {
     type Key;
 
-    fn from_bytes(Bytes) -> Result<Self>;
+    fn from_bytes(_: Bytes) -> Result<Self>;
     fn key(&self) -> &Self::Key;
 }
 
@@ -170,7 +170,7 @@ impl<K> RangeAll<K> {
 impl<K> Range for RangeAll<K> {
     type Key = K;
 
-    fn compare(&self, key: &Self::Key) -> RangeComparison {
+    fn compare(&self, _key: &Self::Key) -> RangeComparison {
         RangeComparison::InRange
     }
 }

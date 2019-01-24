@@ -19,12 +19,12 @@ use std::fmt::Display;
 use std::io::{self, Read, Write};
 use std::rc::Rc;
 
-use btree::BTree;
-use errors::*;
-use pager::Pager;
-use record::{Field, Record};
-use schema::Schema;
-use table::Table;
+use crate::btree::BTree;
+use crate::errors::*;
+use crate::pager::Pager;
+use crate::record::{Field, Record};
+use crate::schema::Schema;
+use crate::table::Table;
 
 use nom_sql::{CreateTableStatement, FieldExpression, SelectStatement, SqlQuery, SqlType};
 
@@ -77,7 +77,7 @@ fn run_query(schema: &Schema, query: &str) -> Result<()> {
 }
 
 fn run() -> Result<()> {
-    let mut pager = Rc::new(Pager::open("aFile.db")?);
+    let pager = Rc::new(Pager::open("aFile.db")?);
     println!(
         "Page Size: {}, Reserved Bytes Per Page: {}, Num Pages: {}",
         pager.header.page_size, pager.header.reserved_byes_per_page, pager.header.num_pages
@@ -117,7 +117,7 @@ fn run() -> Result<()> {
                     Ok(len) => println!("{}", len),
                     Err(e) => println!("Failed to get size of table {}: {}", table_name, e),
                 },
-                Err(e) => println!("Unknown table: {}", table_name),
+                Err(_e) => println!("Unknown table: {}", table_name),
             }
             continue;
         }

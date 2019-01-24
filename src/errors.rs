@@ -1,4 +1,4 @@
-use types::Type;
+use crate::types::Type;
 
 error_chain! {
     errors {

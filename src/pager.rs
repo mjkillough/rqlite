@@ -6,8 +6,8 @@ use std::path::Path;
 
 use bytes::Bytes;
 
-use db::DbHeader;
-use errors::*;
+use crate::db::DbHeader;
+use crate::errors::*;
 
 pub struct Pager {
     file: RefCell<File>,
