@@ -3,17 +3,15 @@ use std::marker::PhantomData;
 use std::mem;
 use std::rc::Rc;
 
+use byteorder::{BigEndian, ByteOrder};
 use bytes::Bytes;
-use byteorder::{ByteOrder, BigEndian};
 
 use errors::*;
 use pager::Pager;
 
-
 // Interior pages have an extra right-pointer.
 const PAGE_INTERIOR_HEADER_LEN: usize = 12;
 const PAGE_LEAF_HEADER_LEN: usize = 8;
-
 
 pub trait Cell: Sized {
     type Key;
@@ -22,18 +20,15 @@ pub trait Cell: Sized {
     fn key(&self) -> &Self::Key;
 }
 
-
 pub trait InteriorCell: Cell {
     fn left(&self) -> usize;
 }
-
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum PageType {
     Interior,
     Leaf,
 }
-
 
 #[derive(Clone, Debug)]
 struct Page<C: Cell> {
@@ -113,7 +108,6 @@ impl<C: Cell> Page<C> {
     }
 }
 
-
 struct PageIter<C: Cell> {
     page: Page<C>,
     idx: usize,
@@ -142,7 +136,6 @@ impl<C: Cell> Iterator for PageIter<C> {
     }
 }
 
-
 fn get_page_type(bytes: &Bytes, header_offset: usize) -> PageType {
     if bytes[header_offset] & 0x8 == 0x8 {
         PageType::Leaf
@@ -150,7 +143,6 @@ fn get_page_type(bytes: &Bytes, header_offset: usize) -> PageType {
         PageType::Interior
     }
 }
-
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum RangeComparison {
@@ -160,13 +152,11 @@ pub enum RangeComparison {
     Greater,
 }
 
-
 pub trait Range {
     type Key;
 
     fn compare(&self, key: &Self::Key) -> RangeComparison;
 }
-
 
 #[derive(Copy, Clone, Debug)]
 pub struct RangeAll<K>(PhantomData<K>);
@@ -224,7 +214,6 @@ impl<K: Ord> Range for RangeGtEq<K> {
     }
 }
 
-
 pub struct BTree<K, I, L>
 where
     I: InteriorCell<Key = K>,
@@ -281,7 +270,6 @@ where
     }
 }
 
-
 pub struct BTreeIter<K, I, L, R>
 where
     I: InteriorCell<Key = K>,
@@ -308,13 +296,11 @@ where
         let header_offset = if page_num == 1 { 100 } else { 0 };
         let ty = get_page_type(&bytes, header_offset);
         match ty {
-            PageType::Interior => {
-                self.interiors.push(Some(
-                    Page::<I>::new(bytes, header_offset, PAGE_INTERIOR_HEADER_LEN)
-                        .unwrap()
-                        .iter(),
-                ))
-            }
+            PageType::Interior => self.interiors.push(Some(
+                Page::<I>::new(bytes, header_offset, PAGE_INTERIOR_HEADER_LEN)
+                    .unwrap()
+                    .iter(),
+            )),
             PageType::Leaf => {
                 self.leaf = Some(
                     Page::<L>::new(bytes, header_offset, PAGE_LEAF_HEADER_LEN)
@@ -400,8 +386,8 @@ where
                                         // If the last comparison was Greater than the range, or on
                                         // the upper boundary, then we know the right-pointer
                                         // contains only keys which are Greater. Don't descend.
-                                        RangeComparison::UpperBoundary |
-                                        RangeComparison::Greater => {}
+                                        RangeComparison::UpperBoundary
+                                        | RangeComparison::Greater => {}
                                         _ => {
                                             // We push None so that we can keep track of our  level
                                             // within the tree. We'll silently move past it when we

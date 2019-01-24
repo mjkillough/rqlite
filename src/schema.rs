@@ -6,7 +6,6 @@ use index::Index;
 use pager::Pager;
 use table::Table;
 
-
 const SQLITE_MASTER_SCHEMA: &'static str = "
     CREATE TABLE sqlite_master(
         type text,
@@ -16,7 +15,6 @@ const SQLITE_MASTER_SCHEMA: &'static str = "
         sql text
     );
 "; // XXX should be "rootpage integer" but there's a bug in nom-sql
-
 
 pub struct Schema {
     pager: Rc<Pager>,
@@ -68,8 +66,6 @@ impl Schema {
         self.tables()?
             .into_iter()
             .find(|t| t.name() == name.as_ref())
-            .ok_or(
-                ErrorKind::TableDoesNotExist(name.as_ref().to_owned()).into(),
-            )
+            .ok_or(ErrorKind::TableDoesNotExist(name.as_ref().to_owned()).into())
     }
 }

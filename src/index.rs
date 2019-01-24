@@ -4,15 +4,14 @@ use std::io::Cursor;
 use std::rc::Rc;
 use std::result;
 
+use byteorder::{BigEndian, ByteOrder};
 use bytes::Bytes;
-use byteorder::{ByteOrder, BigEndian};
 
-use btree::{Cell, InteriorCell, BTree, Range, RangeComparison};
+use btree::{BTree, Cell, InteriorCell, Range, RangeComparison};
 use errors::*;
 use pager::Pager;
-use util::read_varint;
 use record::Record;
-
+use util::read_varint;
 
 #[derive(Debug)]
 struct IndexLeafCell {
@@ -37,7 +36,6 @@ impl Cell for IndexLeafCell {
         &self.record
     }
 }
-
 
 #[derive(Debug)]
 struct IndexInteriorCell {
@@ -74,7 +72,6 @@ impl InteriorCell for IndexInteriorCell {
     }
 }
 
-
 struct IndexRange(Record);
 
 impl IndexRange {
@@ -90,8 +87,7 @@ impl Range for IndexRange {
         if self.0.len() > other.len() {
             panic!(
                 "Attempted to compare records with mis-matched sizes: {:?} {:?}",
-                self.0,
-                other
+                self.0, other
             );
         }
         for (this, that) in self.0.iter().zip(other.iter()) {
@@ -108,9 +104,7 @@ impl Range for IndexRange {
     }
 }
 
-
 type IndexBTree = BTree<Record, IndexInteriorCell, IndexLeafCell>;
-
 
 pub struct Index {
     pager: Rc<Pager>,
@@ -143,12 +137,10 @@ impl Index {
 
     pub fn scan(&self, record: Record) -> Result<Vec<Record>> {
         let btree = IndexBTree::new(self.pager.clone(), self.page_num)?;
-        Ok(
-            btree
-                .iter_range(IndexRange::new(record))
-                .map(|cell| cell.record)
-                .collect(),
-        )
+        Ok(btree
+            .iter_range(IndexRange::new(record))
+            .map(|cell| cell.record)
+            .collect())
     }
 }
 
@@ -157,9 +149,7 @@ impl fmt::Debug for Index {
         write!(
             f,
             "Index for {:?} {{ name: {:?}, page_num: {:?} }}",
-            self.tbl_name,
-            self.name,
-            self.page_num,
+            self.tbl_name, self.name, self.page_num,
         )
     }
 }

@@ -5,18 +5,19 @@ use std::io::Cursor;
 use std::rc::Rc;
 use std::result;
 
+use byteorder::{BigEndian, ByteOrder};
 use bytes::Bytes;
-use byteorder::{ByteOrder, BigEndian};
-use nom_sql::{self, SqlQuery, SqlType, ColumnConstraint, CreateTableStatement, SelectStatement,
-              FieldExpression};
+use nom_sql::{
+    self, ColumnConstraint, CreateTableStatement, FieldExpression, SelectStatement, SqlQuery,
+    SqlType,
+};
 
-use btree::{Cell, InteriorCell, BTree};
+use btree::{BTree, Cell, InteriorCell};
 use errors::*;
 use pager::Pager;
-use util::read_varint;
 use record::{Field, Record};
 use types::Type;
-
+use util::read_varint;
 
 #[derive(Debug)]
 enum ColumnReference {
@@ -24,14 +25,12 @@ enum ColumnReference {
     Index(usize),
 }
 
-
 #[derive(Debug)]
 struct Column {
     name: String,
     ty: Type,
     primary_key: bool,
 }
-
 
 #[derive(Debug)]
 struct TableSchema {
@@ -71,29 +70,31 @@ impl TableSchema {
         // If the primary key is a single integer column, then it is
         // actually stored as the RowId and a null is stored in its place
         // in the fields.
-        let pks = self.columns
+        let pks = self
+            .columns
             .iter()
             .filter(|c| c.primary_key)
             .collect::<Vec<_>>();
         let pk_is_rowid = pks.len() == 1 && pks[0].ty == Type::Integer;
         names
             .iter()
-            .map(|name| if pk_is_rowid && pks[0].name == name.as_ref() {
-                Ok(ColumnReference::RowId)
-            } else {
-                let idx = self.columns
-                    .iter()
-                    .position(|col| col.name == name.as_ref())
-                    .ok_or(format!("Unknown column: {}", name.as_ref()))?;
-                Ok(ColumnReference::Index(idx))
+            .map(|name| {
+                if pk_is_rowid && pks[0].name == name.as_ref() {
+                    Ok(ColumnReference::RowId)
+                } else {
+                    let idx = self
+                        .columns
+                        .iter()
+                        .position(|col| col.name == name.as_ref())
+                        .ok_or(format!("Unknown column: {}", name.as_ref()))?;
+                    Ok(ColumnReference::Index(idx))
+                }
             })
             .collect()
     }
 }
 
-
 type CellKey = u64;
-
 
 #[derive(Debug)]
 pub struct TableLeafCell {
@@ -119,7 +120,6 @@ impl Cell for TableLeafCell {
         &self.row_id
     }
 }
-
 
 #[derive(Debug)]
 pub struct TableInteriorCell {
@@ -148,9 +148,7 @@ impl InteriorCell for TableInteriorCell {
     }
 }
 
-
 type TableBTree = BTree<CellKey, TableInteriorCell, TableLeafCell>;
-
 
 pub struct Table {
     pager: Rc<Pager>,
@@ -214,9 +212,7 @@ impl fmt::Debug for Table {
         write!(
             f,
             "Table {{ name: {:?}, page_num: {:?}, schema: {:?} }}",
-            self.name,
-            self.page_num,
-            self.schema
+            self.name, self.page_num, self.schema
         )
     }
 }

@@ -1,7 +1,7 @@
 use std::cmp::{Ordering, PartialOrd};
 use std::fmt;
-use std::io::Cursor;
 use std::io::prelude::*;
+use std::io::Cursor;
 use std::ops::Index;
 use std::result;
 use std::slice;
@@ -9,13 +9,12 @@ use std::str;
 
 use std::string::ToString;
 
-use bytes::Bytes;
 use byteorder::{BigEndian, ByteOrder};
+use bytes::Bytes;
 
 use errors::*;
 use types::Type;
 use util::read_varint;
-
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum FieldType {
@@ -53,7 +52,6 @@ impl FieldType {
     }
 }
 
-
 #[derive(Clone, Debug)]
 pub enum LiteralValue {
     Null,
@@ -80,20 +78,22 @@ impl Field {
         match ty {
             FieldType::Null => Field::Literal(LiteralValue::Null),
             FieldType::U8 => Field::Literal(LiteralValue::Integer(bytes[0] as u64)),
-            FieldType::U16 => Field::Literal(
-                LiteralValue::Integer(BigEndian::read_u16(&bytes) as u64),
-            ),
+            FieldType::U16 => {
+                Field::Literal(LiteralValue::Integer(BigEndian::read_u16(&bytes) as u64))
+            }
             FieldType::U24 => Field::Literal(LiteralValue::Integer(
                 (((bytes[0] as u64) << 16) | ((bytes[1] as u64) << 8) | (bytes[2] as u64)) as u64,
             )),
-            FieldType::U32 => Field::Literal(
-                LiteralValue::Integer(BigEndian::read_u32(&bytes) as u64),
-            ),
+            FieldType::U32 => {
+                Field::Literal(LiteralValue::Integer(BigEndian::read_u32(&bytes) as u64))
+            }
             FieldType::U48 => Field::Literal(LiteralValue::Integer(
-                (((bytes[0] as u64) << 40) | ((bytes[1] as u64) << 32) |
-                     ((bytes[2] as u64) << 24) | ((bytes[3] as u64) << 16) |
-                     ((bytes[4] as u64) << 8) |
-                     (bytes[5] as u64)) as u64,
+                (((bytes[0] as u64) << 40)
+                    | ((bytes[1] as u64) << 32)
+                    | ((bytes[2] as u64) << 24)
+                    | ((bytes[3] as u64) << 16)
+                    | ((bytes[4] as u64) << 8)
+                    | (bytes[5] as u64)) as u64,
             )),
             FieldType::U64 => Field::Literal(LiteralValue::Integer(BigEndian::read_u64(&bytes))),
             FieldType::F64 => Field::Literal(LiteralValue::Float(BigEndian::read_f64(&bytes))),
@@ -106,21 +106,17 @@ impl Field {
 
     pub fn ty(&self) -> Type {
         match *self {
-            Field::Literal(ref lit) => {
-                match *lit {
-                    LiteralValue::Null => Type::Null,
-                    LiteralValue::Integer(_) => Type::Integer,
-                    LiteralValue::Float(_) => Type::Float,
-                    LiteralValue::Blob(_) => Type::Blob,
-                    LiteralValue::Str(_) => Type::Text,
-                }
-            }
-            Field::Lazy(ref lazy) => {
-                match *lazy {
-                    LazyValue::Blob(_) => Type::Blob,
-                    LazyValue::Str(_) => Type::Text,
-                }
-            }
+            Field::Literal(ref lit) => match *lit {
+                LiteralValue::Null => Type::Null,
+                LiteralValue::Integer(_) => Type::Integer,
+                LiteralValue::Float(_) => Type::Float,
+                LiteralValue::Blob(_) => Type::Blob,
+                LiteralValue::Str(_) => Type::Text,
+            },
+            Field::Lazy(ref lazy) => match *lazy {
+                LazyValue::Blob(_) => Type::Blob,
+                LazyValue::Str(_) => Type::Text,
+            },
         }
     }
 
@@ -193,26 +189,18 @@ impl PartialOrd for Field {
     fn partial_cmp(&self, other: &Field) -> Option<Ordering> {
         let result = match self.ty() {
             Type::Null => other.as_null().map(|_| Some(Ordering::Equal)),
-            Type::Integer => {
-                other
-                    .as_integer()
-                    .map(|o| self.as_integer().unwrap().partial_cmp(&o))
-            }
-            Type::Float => {
-                other
-                    .as_float()
-                    .map(|o| self.as_float().unwrap().partial_cmp(&o))
-            }
-            Type::Blob => {
-                other
-                    .as_blob()
-                    .map(|o| self.as_blob().unwrap().partial_cmp(o))
-            }
-            Type::Text => {
-                other
-                    .as_text()
-                    .map(|o| self.as_text().unwrap().partial_cmp(o))
-            }
+            Type::Integer => other
+                .as_integer()
+                .map(|o| self.as_integer().unwrap().partial_cmp(&o)),
+            Type::Float => other
+                .as_float()
+                .map(|o| self.as_float().unwrap().partial_cmp(&o)),
+            Type::Blob => other
+                .as_blob()
+                .map(|o| self.as_blob().unwrap().partial_cmp(o)),
+            Type::Text => other
+                .as_text()
+                .map(|o| self.as_text().unwrap().partial_cmp(o)),
         };
         result.expect("Unimplemented: proper affinity types in Field comparisons")
     }
@@ -221,15 +209,13 @@ impl PartialOrd for Field {
 impl fmt::Debug for Field {
     fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
         match *self {
-            Field::Literal(ref lit) => {
-                match *lit {
-                    LiteralValue::Null => write!(f, "null"),
-                    LiteralValue::Integer(i) => write!(f, "{}", i),
-                    LiteralValue::Float(float) => write!(f, "{}", float),
-                    LiteralValue::Blob(ref vec) => write!(f, "{:?}", vec),
-                    LiteralValue::Str(ref string) => write!(f, "\"{}\"", string),
-                }
-            }
+            Field::Literal(ref lit) => match *lit {
+                LiteralValue::Null => write!(f, "null"),
+                LiteralValue::Integer(i) => write!(f, "{}", i),
+                LiteralValue::Float(float) => write!(f, "{}", float),
+                LiteralValue::Blob(ref vec) => write!(f, "{:?}", vec),
+                LiteralValue::Str(ref string) => write!(f, "\"{}\"", string),
+            },
             Field::Lazy(ref lazy) => {
                 match *lazy {
                     LazyValue::Blob(ref bytes) => write!(f, "{:?}", bytes),
@@ -242,7 +228,6 @@ impl fmt::Debug for Field {
         }
     }
 }
-
 
 #[derive(Clone, Debug)]
 pub struct Record {

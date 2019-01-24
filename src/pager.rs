@@ -6,9 +6,8 @@ use std::path::Path;
 
 use bytes::Bytes;
 
-use errors::*;
 use db::DbHeader;
-
+use errors::*;
 
 pub struct Pager {
     file: RefCell<File>,
@@ -21,9 +20,7 @@ impl Pager {
 
         let mut buffer = [0; 100];
         file.read_exact(&mut buffer)
-            .chain_err(|| {
-                ErrorKind::InvalidDbHeader("Error reading header".to_owned())
-            })?;
+            .chain_err(|| ErrorKind::InvalidDbHeader("Error reading header".to_owned()))?;
         let header = DbHeader::parse(&buffer)?;
 
         Ok(Pager {

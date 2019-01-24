@@ -2,7 +2,6 @@ use std::io::prelude::*;
 
 use errors::*;
 
-
 /// Read's a 64-bit variable length integer.
 ///
 /// From sqlite3's btreeInt.h:
@@ -46,7 +45,6 @@ pub fn read_varint<R: Read>(mut data: R) -> Result<u64> {
 
     Ok(value)
 }
-
 
 #[cfg(test)]
 mod test {

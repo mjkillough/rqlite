@@ -1,7 +1,6 @@
-use byteorder::{ByteOrder, BigEndian};
+use byteorder::{BigEndian, ByteOrder};
 
 use errors::*;
-
 
 pub struct DbHeader {
     pub page_size: usize,
@@ -15,9 +14,10 @@ impl DbHeader {
 
         const s: &'static str = "SQLite format 3\0";
         if data.len() < s.len() || &data[..s.len()] != s.as_bytes() {
-            bail!(InvalidDbHeader(
-                format!("Invalid header string: {:?}", &data[..s.len()]),
-            ));
+            bail!(InvalidDbHeader(format!(
+                "Invalid header string: {:?}",
+                &data[..s.len()]
+            ),));
         }
 
         // "The database page size in bytes. Must be a power of two between 512

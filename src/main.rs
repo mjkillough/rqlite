@@ -26,8 +26,7 @@ use record::{Field, Record};
 use schema::Schema;
 use table::Table;
 
-use nom_sql::{SqlQuery, SqlType, CreateTableStatement, SelectStatement, FieldExpression};
-
+use nom_sql::{CreateTableStatement, FieldExpression, SelectStatement, SqlQuery, SqlType};
 
 #[derive(Debug)]
 struct SelectOp {
@@ -59,14 +58,13 @@ impl SelectOp {
     }
 }
 
-
 fn run_query(schema: &Schema, query: &str) -> Result<()> {
     let stmt = nom_sql::parser::parse_query(&query)
         .map_err(|_| format!("Error parsing statement: {}", query))?;
     match stmt {
         SqlQuery::Select(select) => {
-            let op = SelectOp::from_stmt(select)
-                .chain_err(|| format!("Error processing statement:"))?;
+            let op =
+                SelectOp::from_stmt(select).chain_err(|| format!("Error processing statement:"))?;
             let table = schema.table(op.table)?;
             let result = table
                 .select(op.columns)
@@ -78,15 +76,11 @@ fn run_query(schema: &Schema, query: &str) -> Result<()> {
     Ok(())
 }
 
-
-
 fn run() -> Result<()> {
     let mut pager = Rc::new(Pager::open("aFile.db")?);
     println!(
         "Page Size: {}, Reserved Bytes Per Page: {}, Num Pages: {}",
-        pager.header.page_size,
-        pager.header.reserved_byes_per_page,
-        pager.header.num_pages
+        pager.header.page_size, pager.header.reserved_byes_per_page, pager.header.num_pages
     );
 
     let schema = Schema::new(pager)?;
@@ -119,12 +113,10 @@ fn run() -> Result<()> {
         if buffer.starts_with(".count ") {
             let (_, table_name) = buffer.split_at(7);
             match schema.table(table_name.trim()) {
-                Ok(table) => {
-                    match table.len() {
-                        Ok(len) => println!("{}", len),
-                        Err(e) => println!("Failed to get size of table {}: {}", table_name, e),
-                    }
-                }
+                Ok(table) => match table.len() {
+                    Ok(len) => println!("{}", len),
+                    Err(e) => println!("Failed to get size of table {}: {}", table_name, e),
+                },
                 Err(e) => println!("Unknown table: {}", table_name),
             }
             continue;
