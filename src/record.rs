@@ -207,7 +207,7 @@ impl PartialOrd for Field {
 }
 
 impl fmt::Debug for Field {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> result::Result<(), fmt::Error> {
         match *self {
             Field::Literal(ref lit) => match *lit {
                 LiteralValue::Null => write!(f, "null"),
@@ -284,7 +284,7 @@ impl Record {
         self.fields.len()
     }
 
-    pub fn iter(&self) -> slice::Iter<Field> {
+    pub fn iter(&self) -> slice::Iter<'_, Field> {
         self.fields.iter()
     }
 }

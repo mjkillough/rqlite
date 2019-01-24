@@ -1,8 +1,8 @@
-extern crate byteorder;
-extern crate bytes;
+
+
 #[macro_use]
 extern crate error_chain;
-extern crate nom_sql;
+use nom_sql;
 
 mod btree;
 mod db;

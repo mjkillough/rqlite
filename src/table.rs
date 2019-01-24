@@ -208,7 +208,7 @@ impl Table {
 }
 
 impl fmt::Debug for Table {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> result::Result<(), fmt::Error> {
         write!(
             f,
             "Table {{ name: {:?}, page_num: {:?}, schema: {:?} }}",

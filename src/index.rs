@@ -145,7 +145,7 @@ impl Index {
 }
 
 impl fmt::Debug for Index {
-    fn fmt(&self, f: &mut fmt::Formatter) -> result::Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> result::Result<(), fmt::Error> {
         write!(
             f,
             "Index for {:?} {{ name: {:?}, page_num: {:?} }}",
